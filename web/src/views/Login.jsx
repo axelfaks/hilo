@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react'
+import Marca from '../Marca.jsx'
 import { api, sesion } from '../api.js'
 
 /* Pantalla mínima hasta que llegue el diseño de Mars.
    Si todavía no hay ninguna cuenta, ofrece crear la primera en vez de pedir
    una que no existe: es el primer arranque de la app, no un olvido de contraseña. */
 
-export default function Login({ onEntro }) {
+export default function Login({ onEntro, quiereCrear = false }) {
   const [primera, setPrimera] = useState(null)
   const [email, setEmail] = useState('')
   const [nombre, setNombre] = useState('')
@@ -13,7 +14,12 @@ export default function Login({ onEntro }) {
   const [error, setError] = useState('')
   const [yendo, setYendo] = useState(false)
 
-  useEffect(() => { api.authEstado().then(e => setPrimera(!e.hay_usuarios)).catch(() => setPrimera(false)) }, [])
+  // quiereCrear manda: si venís de «Crear una cuenta», ves el formulario de alta
+  useEffect(() => {
+    api.authEstado()
+      .then(e => setPrimera(quiereCrear || !e.hay_usuarios))
+      .catch(() => setPrimera(quiereCrear))
+  }, [quiereCrear])
 
   if (primera === null) return null
 
@@ -34,13 +40,13 @@ export default function Login({ onEntro }) {
   return (
     <div style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', padding: 24 }}>
       <form className="card" onSubmit={enviar} style={{ width: '100%', maxWidth: 400, padding: '30px 32px' }}>
-        <span className="t-sec" style={{ color: 'var(--accent)', display: 'block' }}>Hilo</span>
+        <Marca alto={30} />
         <h1 className="t-title" style={{ marginTop: 18 }}>
           {primera ? 'Creá tu cuenta' : 'Entrá a tu cuenta'}
         </h1>
         <p className="t-small" style={{ marginTop: 6, marginBottom: 22 }}>
           {primera
-            ? 'Es la primera vez que se abre esta instalación. La cuenta que crees es la dueña.'
+            ? 'Con esto entrás a tu Hilo. Después podés cambiar lo que quieras.'
             : 'Con el mail y la contraseña con los que la creaste.'}
         </p>
 

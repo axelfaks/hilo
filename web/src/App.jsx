@@ -5,6 +5,8 @@ import Ficha from './views/Ficha.jsx'
 import Admin from './views/Admin.jsx'
 import Cliente from './views/Cliente.jsx'
 import Onboarding from './views/Onboarding.jsx'
+import Marca from './Marca.jsx'
+import Landing from './views/Landing.jsx'
 import Login from './views/Login.jsx'
 
 /** Ruteo por hash: sin dependencias y funciona igual al abrirlo desde el celular.
@@ -55,13 +57,38 @@ export default function App() {
   if (partes[0] === 'c') return <Cliente token={partes[1]} />
   if (!entrada) return null
   const volver = () => revisarPuerta().then(ok => { if (ok) { cargar(); ir('/') } })
-  // #/entrar siempre muestra la pantalla de cuenta, esté protegida o no
-  if (!entrada.adentro || partes[0] === 'entrar') return <Login onEntro={volver} />
+  // #/entrar y #/crear siempre muestran la pantalla de cuenta, esté protegida
+  // o no. La diferencia es con cuál de las dos caras abre.
+  if (partes[0] === 'entrar') return <Login onEntro={volver} />
+  if (partes[0] === 'crear') return <Login onEntro={volver} quiereCrear />
+
+  /* El onboarding es el embudo de alta y se hace SIN cuenta: primero contás qué
+     vendés y ves tu Hilo armado, después ponés una contraseña. */
+  if (partes[0] === 'onboarding' && !entrada.adentro) {
+    return <Onboarding onListo={() => ir('/crear')} />
+  }
+
+  // Sin sesión, la puerta de calle es la landing y no el formulario: pedirle la
+  // contraseña a alguien que todavía no sabe qué es esto no lleva a ningún lado.
+  if (!entrada.adentro) return <Landing />
+
+  /* Y también es la puerta de calle cuando la instalación TODAVÍA NO TIENE
+     DUEÑO. Sin esto, el que abre Hilo por primera vez caía directo en el
+     onboarding sin haber visto nunca de qué se trata: la landing quedaba
+     escrita pero nadie la veía jamás. Las demás rutas siguen abiertas, así que
+     nadie queda afuera de su propia instalación. */
+  if (entrada.sinCuenta && partes.length === 0) return <Landing />
   if (!negocio) return null
 
   const pendiente = negocio.onboarding_hecho === false
   if (pendiente || partes[0] === 'onboarding') {
-    return <Onboarding onListo={() => { cargar(); ir('/') }} />
+    return <Onboarding onListo={(destino) => {
+      cargar()
+      /* Recién acá se pide la cuenta: primero contás qué vendés y ves tu Hilo
+         armado, después ponés una contraseña. Al revés se pierde a la gente
+         antes de haberle mostrado nada. Si ya hay dueño, va derecho a la cola. */
+      ir(destino || (entrada.sinCuenta ? '/crear' : '/'))
+    }} />
   }
 
   const marco = (hijo) => <Marco sinCuenta={entrada.sinCuenta}>{hijo}</Marco>
@@ -69,6 +96,20 @@ export default function App() {
   if (partes[0] === 'a') return marco(<Ficha id={Number(partes[1])} />)
   return marco(<Cola />)
 }
+
+/* Cerrar sesión.
+
+   El token vive en localStorage, así que salir es borrarlo. Lo que no alcanza es
+   borrarlo y nada más: el estado de React sigue creyendo que hay sesión y la
+   pantalla no cambia. Por eso además se vuelve a la raíz y se recarga — así el
+   siguiente arranque es idéntico al de alguien que nunca entró, que es
+   justamente lo que uno quiere ver cuando prueba la landing. */
+export function salir() {
+  sesion.borrar()
+  window.location.hash = '/'
+  window.location.reload()
+}
+
 
 function Marco({ children, sinCuenta }) {
   return (
@@ -115,7 +156,9 @@ function Barra() {
   return (
     <div className="bar">
       <div className="bar-in">
-        <button className="logo" onClick={() => ir('/')}>Hilo</button>
+        <button className="logo" onClick={() => ir('/')} aria-label="Ir a la cola">
+          <Marca alto={22} />
+        </button>
         <span className="crumb">Clientes</span>
         <div className="bar-right">
           {c && <>
@@ -125,6 +168,8 @@ function Barra() {
             {c.etapas_por_aprobar > 0 && <span className="tag"><b>{c.etapas_por_aprobar}</b> etapas por aprobar</span>}
           </>}
           <button className="btn btn-sm" onClick={() => ir('/admin')}>Configuración</button>
+          <button className="btn btn-sm" onClick={salir}
+            title="Cerrar sesión y volver a la portada">Salir</button>
         </div>
       </div>
     </div>

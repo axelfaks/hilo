@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlmodel import select
 
-from . import ai, auth, correo, pipeline as pl, simulador as sim
+from . import ai, auth, pipeline as pl, simulador as sim
 from .config import cargar as cargar_env
 
 cargar_env()
@@ -48,32 +48,13 @@ def _arranque():
             # que no se caiga el arranque: sin datos la app igual levanta
             print(f"[hilo] no pude sembrar ({e})")
 
-    # El correo es el primer canal real de Hilo. Si hay casilla configurada,
-    # queda un hilo mirando la bandeja: cada mail que llega entra por la misma
-    # puerta que todo lo demás, pl.ingesta(). Sin configurar, esto no hace nada
-    # y el mail sigue siendo simulado como hasta ahora.
-    if correo.vigilar(_entro_un_mail):
-        print(f"[hilo] mirando la casilla {correo.estado()['casilla']}")
-
-
-def _entro_un_mail(mail: dict):
-    """Un mail de verdad, tratado igual que cualquier otro mensaje."""
-    with sesion() as s:
-        r = pl.ingesta(s, "mail", mail["remitente"], mail["texto"],
-                       html=mail.get("html", ""), asunto=mail.get("asunto", ""))
-    quien = mail["remitente"]
-    print(f"[hilo] mail de {quien}: "
-          + ("entró al hilo" if r.get("identificado") else "sin identificar"))
-
 
 # --------------------------------------------------------------------- login
 # La API queda protegida SOLO cuando existe al menos un usuario. Mientras no haya
 # ninguno la app funciona abierta y te pide crear la primera cuenta: nadie se
 # queda afuera de su propia app por un problema de configuración.
 
-# El onboarding va abierto porque es lo PRIMERO que hace alguien que llega:
-# contás qué vendés, ves tu Hilo armado y recién después ponés una contraseña.
-ABIERTAS = ("/api/auth/", "/api/cliente/", "/api/onboarding/")
+ABIERTAS = ("/api/auth/", "/api/cliente/")   # login y la vista del cliente de la demo
 
 
 @app.middleware("http")
@@ -107,15 +88,15 @@ class RegistroIn(BaseModel):
 
 @app.post("/api/auth/registro")
 def auth_registro(body: RegistroIn):
-    """Crea una cuenta. Cualquiera puede darse de alta."""
+    """Crea la primera cuenta. Después de eso, los usuarios los invita el dueño."""
     if "@" not in body.email or "." not in body.email.split("@")[-1]:
         raise HTTPException(400, "Ese mail no parece un mail")
     problema = auth.problema_con_la_contrasena(body.password)
     if problema:
         raise HTTPException(400, problema)
     with sesion() as s:
-        if auth.buscar_por_email(s, body.email):
-            raise HTTPException(400, "Ya hay una cuenta con ese mail. Entrá con ella.")
+        if auth.hay_usuarios(s):
+            raise HTTPException(403, "Ya hay una cuenta creada. Entrá con ella.")
         u = auth.crear_usuario(s, body.email, body.password, body.nombre)
         return {"token": auth.emitir_token(u.id), "usuario": auth.publico(u)}
 
@@ -194,7 +175,7 @@ def _compromisos(s, alias_id: int) -> list:
 def _mensaje(m: Message) -> dict:
     return {"id": m.id, "canal": m.canal, "canal_label": CANALES.get(m.canal, m.canal),
             "direccion": m.direccion, "autor": m.autor, "texto": m.texto,
-            "asunto": m.asunto, "html": m.html, "cc": m.cc, "cco": m.cco,
+            "asunto": m.asunto,
             "adjuntos": json.loads(m.adjuntos_json or "[]"), "simulado": m.simulado,
             "resumen": m.resumen,
             "aprobado_por": m.aprobado_por, "creado": m.creado.isoformat()}
@@ -350,31 +331,6 @@ def onboarding_reabrir():
     return {"ok": True}
 
 
-# ------------------------------------------------------------------- correo
-
-
-@app.get("/api/correo/estado")
-def correo_estado():
-    """Para mirar desde Configuración si el mail está andando de verdad."""
-    return correo.estado()
-
-
-@app.post("/api/correo/revisar")
-def correo_revisar():
-    """Mira la bandeja ahora mismo, sin esperar al próximo turno del vigía.
-
-    En una demo en vivo no se puede quedar esperando diez segundos mirando la
-    pantalla: con esto el mail entra cuando uno lo pide.
-    """
-    if not correo.configurado():
-        raise HTTPException(400, "El correo no está configurado")
-    entraron = 0
-    for mail in correo.revisar():
-        _entro_un_mail(mail)
-        entraron += 1
-    return {"entraron": entraron, "estado": correo.estado()}
-
-
 @app.get("/api/diagnostico-ia")
 def diagnostico_ia():
     """Para saber por que la IA no contesta, sin tener que mirar la consola."""
@@ -419,8 +375,7 @@ def cola():
         for m in s.exec(select(Message).where(Message.alias_id == None)):  # noqa: E711
             sug = s.get(Alias, m.sugerencia_alias_id) if m.sugerencia_alias_id else None
             sin_id.append({"mensaje_id": m.id, "remitente": m.remitente, "canal": m.canal,
-                           "texto": m.texto, "creado": m.creado.isoformat(),
-                           "html": m.html,
+                           "texto": m.texto[:160], "creado": m.creado.isoformat(),
                            "sugerencia": ({"alias_id": sug.id, "nombre": sug.nombre,
                                            "confianza": m.sugerencia_score,
                                            "motivo": m.sugerencia_motivo} if sug else None)})
@@ -563,8 +518,6 @@ class RespuestaIn(BaseModel):
     texto: str
     canal: str = "mail"
     asunto: str = ""
-    cc: str = ""
-    cco: str = ""
     autor: str = "ia"          # "ia" si sale del borrador, "humano" si lo escribiste vos
     aprobado_por: str = "Axel"
 
@@ -577,21 +530,9 @@ def responder(alias_id: int, body: RespuestaIn):
             raise HTTPException(404, "No existe ese cliente")
         if body.canal not in CANALES_SALIENTES:
             raise HTTPException(400, f"Por {body.canal} no se envía, se registra")
-
-        # Por mail sale de verdad. Si el envío falla no guardamos nada: el hilo
-        # no debe mostrar como enviado algo que se quedó en el camino, y así el
-        # vendedor puede corregir y reintentar sin mensajes fantasma.
-        asunto = body.asunto if body.canal in CANALES_CON_ASUNTO else ""
-        salio, error = pl.despachar(s, a, body.canal, asunto, body.texto,
-                                    cc=body.cc, cco=body.cco)
-        if error:
-            raise HTTPException(400, f"No se pudo enviar el mail: {error}")
-
         s.add(Message(alias_id=alias_id, canal=body.canal, direccion="saliente",
                       autor=body.autor, texto=body.texto,
-                      asunto=asunto,
-                      cc=body.cc if body.canal in CANALES_CON_ASUNTO else "",
-                      cco=body.cco if body.canal in CANALES_CON_ASUNTO else "",
+                      asunto=body.asunto if body.canal in CANALES_CON_ASUNTO else "",
                       aprobado_por=body.aprobado_por))
         s.commit()
         pl.construir_briefing(s, a)
@@ -736,90 +677,6 @@ def fusionar(mensaje_id: int, alias_id: int):
         s.commit()
         pl.construir_briefing(s, a)
     return {"ok": True, "alias_id": alias_id}
-
-
-class NuevoDesdeMensajeIn(BaseModel):
-    nombre: str = ""
-    importancia: str = "media"
-
-
-@app.post("/api/no-identificados/{mensaje_id}/nuevo")
-def nuevo_desde_mensaje(mensaje_id: int, body: NuevoDesdeMensajeIn):
-    """Convierte un mensaje huérfano en un cliente nuevo.
-
-    Es la otra mitad de fusionar: si el mensaje no es de nadie que ya tengamos,
-    es de alguien que todavía no cargamos. Hasta ahora la app solo sabía hacer
-    la primera mitad y el botón «Crear un alias nuevo» no llevaba a ningún lado.
-    """
-    import re as _re
-    import secrets
-
-    with sesion() as s:
-        m = s.get(Message, mensaje_id)
-        if not m:
-            raise HTTPException(404, "No existe ese mensaje")
-        if m.alias_id:
-            raise HTTPException(400, "Ese mensaje ya pertenece a un cliente")
-
-        # Si no escribieron un nombre, se arma con la parte de antes del arroba:
-        # juan.rodriguez@… -> "Juan Rodriguez". Es un punto de partida editable.
-        nombre = body.nombre.strip()
-        if not nombre:
-            local = (m.remitente or "").split("@")[0]
-            partes = [p for p in _re.split(r"[._\-]+", local) if p]
-            nombre = " ".join(p.capitalize() for p in partes) or "Cliente nuevo"
-
-        b = pl.negocio(s)
-        etps = pl.etapas(b)
-        base = _re.sub(r"[^a-z0-9]+", "", nombre.lower())[:12] or "cliente"
-        token = base
-        while s.exec(select(Alias).where(Alias.token == token)).first():
-            token = f"{base}{secrets.token_hex(2)}"
-
-        a = Alias(nombre=nombre, contacto=m.remitente or "", rubro=b.rubro or "",
-                  importancia=body.importancia,
-                  estado=etps[0] if etps else "Nuevo", token=token)
-        s.add(a)
-        s.commit()
-        s.refresh(a)
-
-        if m.remitente and not s.exec(
-                select(Identity).where(Identity.valor == m.remitente)).first():
-            s.add(Identity(alias_id=a.id, canal=m.canal, valor=m.remitente))
-
-        m.alias_id = a.id
-        m.sugerencia_alias_id = None
-        m.sugerencia_score = 0
-        m.sugerencia_motivo = ""
-        s.add(m)
-        s.commit()
-
-        pl.construir_briefing(s, a)
-        pl.actuar(s, a, m.canal)
-        return {"ok": True, "alias_id": a.id, "nombre": a.nombre, "token": a.token}
-
-
-@app.delete("/api/mensajes/{mensaje_id}")
-def borrar_mensaje(mensaje_id: int):
-    """Tira un mensaje a la basura.
-
-    Sirve para lo que no es una conversación: la promoción que se coló, la
-    prueba que uno mismo se mandó, el mail de bienvenida de Google. Si el
-    mensaje pertenecía a un cliente, se recalcula su briefing para que el
-    resumen no siga hablando de algo que ya no está.
-    """
-    with sesion() as s:
-        m = s.get(Message, mensaje_id)
-        if not m:
-            raise HTTPException(404, "No existe ese mensaje")
-        alias_id = m.alias_id
-        s.delete(m)
-        s.commit()
-        if alias_id:
-            a = s.get(Alias, alias_id)
-            if a:
-                pl.construir_briefing(s, a)
-    return {"ok": True}
 
 
 # ----------------------------------------------- el cliente interpretado por la IA

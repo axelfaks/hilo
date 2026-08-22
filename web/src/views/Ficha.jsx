@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { api, CANAL_LABEL, canalColor, fecha } from '../api.js'
+import CuerpoMail from '../CuerpoMail.jsx'
 
 /* Ficha del cliente — estructura y sistema visual de Toto (iteración 2).
    Orden de lectura: cuánto hace que no pasa nada, qué hay que hacer, en qué
@@ -442,7 +443,13 @@ function Mensaje({ m, ficha, ultimo }) {
       {meta}
       <div className="msg-bubble">
         {m.asunto && <div className="msg-asunto">{m.asunto}</div>}
-        {m.texto}
+        {(m.cc || m.cco) && (
+          <div className="msg-copias">
+            {m.cc && <span>CC: {m.cc}</span>}
+            {m.cco && <span>CCO: {m.cco}</span>}
+          </div>
+        )}
+        {m.html ? <CuerpoMail html={m.html} texto={m.texto} max={300} /> : m.texto}
         {m.adjuntos.length > 0 && (
           <div className="att">{m.adjuntos.map(a => <span className="attbox" key={a}>{a}</span>)}</div>
         )}
@@ -457,6 +464,8 @@ function ModalBorrador({ ficha, onCerrar, onCambio, onEnviado }) {
   const b = ficha.briefing || {}
   const [texto, setTexto] = useState(b.borrador?.texto || '')
   const [asunto, setAsunto] = useState(b.borrador?.asunto || '')
+  const [cc, setCc] = useState('')
+  const [cco, setCco] = useState('')
   const [canal, setCanal] = useState(b.borrador?.canal || ficha.responder_por || 'mail')
   const [pensando, setPensando] = useState(!b.borrador)
   const [enviando, setEnviando] = useState(false)
@@ -509,9 +518,12 @@ function ModalBorrador({ ficha, onCerrar, onCambio, onEnviado }) {
                 {destino?.destino && <span>Para <b>{destino.destino}</b></span>}
               </div>
               {destino?.asunto && (
-                <input type="text" value={asunto} onChange={e => setAsunto(e.target.value)}
-                  placeholder="Asunto" aria-label="Asunto del mail"
-                  style={{ marginBottom: 10, fontWeight: 700 }} />
+                <>
+                  <input type="text" value={asunto} onChange={e => setAsunto(e.target.value)}
+                    placeholder="Asunto" aria-label="Asunto del mail"
+                    style={{ marginBottom: 10, fontWeight: 700 }} />
+                  <Copias cc={cc} setCc={setCc} cco={cco} setCco={setCco} />
+                </>
               )}
               <textarea ref={area} className="draft-area" value={texto} disabled={pensando}
                 onChange={e => setTexto(e.target.value)} aria-label="Borrador de la respuesta"
@@ -543,7 +555,7 @@ function ModalBorrador({ ficha, onCerrar, onCambio, onEnviado }) {
             <button className="btn btn--primary" disabled={pensando || enviando || !texto.trim()}
               onClick={async () => {
                 setEnviando(true)
-                await api.responder(ficha.id, { texto, canal, asunto, autor: 'ia' })
+                await api.responder(ficha.id, { texto, canal, asunto, cc, cco, autor: 'ia' })
                 onEnviado()
               }}>
               {enviando ? 'Enviando…' : 'Aprobar y enviar'}
@@ -566,6 +578,8 @@ function Redactor({ ficha, canalSugerido, onEnviado }) {
   }
   const [canal, setCanal] = useState(inicial)
   const [asunto, setAsunto] = useState('')
+  const [cc, setCc] = useState('')
+  const [cco, setCco] = useState('')
   const [texto, setTexto] = useState('')
   const [enviando, setEnviando] = useState(false)
   useEffect(() => { setCanal(inicial()) }, [canalSugerido, ficha.id])
@@ -584,8 +598,11 @@ function Redactor({ ficha, canalSugerido, onEnviado }) {
       </div>
       {elegido.destino && <p className="sec-note" style={{ marginBottom: 10 }}>Sale a <b>{elegido.destino}</b></p>}
       {elegido.asunto && (
-        <input type="text" value={asunto} onChange={e => setAsunto(e.target.value)}
-          placeholder="Asunto" aria-label="Asunto del mail" style={{ marginBottom: 9, fontWeight: 700 }} />
+        <>
+          <input type="text" value={asunto} onChange={e => setAsunto(e.target.value)}
+            placeholder="Asunto" aria-label="Asunto del mail" style={{ marginBottom: 9, fontWeight: 700 }} />
+          <Copias cc={cc} setCc={setCc} cco={cco} setCco={setCco} />
+        </>
       )}
       <textarea rows={elegido.asunto ? 5 : 3} value={texto} onChange={e => setTexto(e.target.value)}
         aria-label="Mensaje" placeholder={`Escribí el mensaje de ${elegido.label}…`} />
@@ -593,8 +610,12 @@ function Redactor({ ficha, canalSugerido, onEnviado }) {
         <button className="btn btn--primary" disabled={enviando || !texto.trim()}
           onClick={async () => {
             setEnviando(true)
-            await api.responder(ficha.id, { texto, canal, asunto: elegido.asunto ? asunto : '', autor: 'humano' })
-            setTexto(''); setAsunto(''); setEnviando(false); onEnviado()
+            await api.responder(ficha.id, {
+              texto, canal, autor: 'humano',
+              asunto: elegido.asunto ? asunto : '',
+              cc: elegido.asunto ? cc : '', cco: elegido.asunto ? cco : '',
+            })
+            setTexto(''); setAsunto(''); setCc(''); setCco(''); setEnviando(false); onEnviado()
           }}>
           {enviando ? 'Enviando…' : `Enviar por ${elegido.label}`}
         </button>
@@ -705,5 +726,47 @@ function Simulador({ ficha, onCambio }) {
         </div>
       )}
     </section>
+  )
+}
+
+
+/* ---------------------------------------------------------------------------
+   CC Y CCO
+
+   Arrancan escondidos: la enorme mayoría de las respuestas no llevan copia, y
+   dos campos vacíos siempre a la vista solo hacen ruido. Aparecen cuando los
+   pedís, como en cualquier cliente de mail.
+
+   La diferencia entre los dos no es cosmética: el CC se escribe en el mail y lo
+   ven todos los que reciben; el CCO viaja solo en el sobre y no queda escrito en
+   ningún lado. Por eso se aclara abajo — mandar un CCO creyendo que es un CC es
+   un error que no se puede deshacer.
+--------------------------------------------------------------------------- */
+
+function Copias({ cc, setCc, cco, setCco }) {
+  const [abierto, setAbierto] = useState(Boolean(cc || cco))
+  if (!abierto) {
+    return (
+      <button className="btn btn-sm" style={{ marginBottom: 9 }} onClick={() => setAbierto(true)}>
+        + CC / CCO
+      </button>
+    )
+  }
+  return (
+    <div style={{ marginBottom: 9, display: 'flex', flexDirection: 'column', gap: 7 }}>
+      <div className="row" style={{ gap: 8 }}>
+        <span className="lbl" style={{ width: 38 }}>CC</span>
+        <input type="text" value={cc} onChange={e => setCc(e.target.value)} style={{ flex: 1 }}
+          aria-label="Con copia" placeholder="separá varios con coma" />
+      </div>
+      <div className="row" style={{ gap: 8 }}>
+        <span className="lbl" style={{ width: 38 }}>CCO</span>
+        <input type="text" value={cco} onChange={e => setCco(e.target.value)} style={{ flex: 1 }}
+          aria-label="Con copia oculta" placeholder="no los ve nadie más" />
+      </div>
+      <p className="t-small" style={{ color: 'var(--ink-3)' }}>
+        A los de CC los ve todo el que reciba el mail. A los de CCO no los ve nadie.
+      </p>
+    </div>
   )
 }

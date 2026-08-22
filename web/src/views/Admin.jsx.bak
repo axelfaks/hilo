@@ -9,12 +9,9 @@ export default function Admin() {
   const [pensando, setPensando] = useState(false)
   const [porQue, setPorQue] = useState('')
   const [guardado, setGuardado] = useState(false)
-  const [correo, setCorreo] = useState(null)
-  const [mirando, setMirando] = useState(false)
 
   useEffect(() => {
     api.negocio().then(d => { setN(d); setEstados(d.estados); setDesc(d.descripcion) })
-    api.correoEstado().then(setCorreo).catch(() => {})
   }, [])
 
   if (!n) return <p className="t-body"><span className="spin" /> Cargando…</p>
@@ -49,8 +46,6 @@ export default function Admin() {
           </p>
         </div>
       )}
-
-      <Correo estado={correo} setEstado={setCorreo} mirando={mirando} setMirando={setMirando} />
 
       <div className="row" style={{ marginTop: 18 }}>
         <button className="btn btn-sm" onClick={async () => {
@@ -154,74 +149,6 @@ function Regla({ titulo, valor, ancho }) {
     }}>
       <span className="lbl">{titulo}</span>
       <p className="t-body" style={{ marginTop: 5, color: 'var(--ink)' }}>{valor || '—'}</p>
-    </div>
-  )
-}
-
-
-/* ---------------------------------------------------------------------------
-   EL CORREO
-
-   El mail es el único canal real de Hilo: lo que sale de acá llega a una
-   bandeja de verdad y lo que entra a la casilla aparece en el hilo. Por eso
-   tiene su propio cartel: en medio de una demo uno necesita saber, de un
-   vistazo, si el canal está vivo — y sin mirar la consola del server.
---------------------------------------------------------------------------- */
-
-function Correo({ estado: e, setEstado, mirando, setMirando }) {
-  if (!e) return null
-
-  const roto = Boolean(e.ultimo_error)
-  const color = !e.configurado ? 'var(--ink-3)' : roto ? 'var(--amber)' : 'var(--teal)'
-
-  const revisar = async () => {
-    setMirando(true)
-    try {
-      const r = await api.correoRevisar()
-      setEstado(r.estado)
-    } catch (err) {
-      setEstado({ ...e, ultimo_error: err.message })
-    } finally { setMirando(false) }
-  }
-
-  return (
-    <div className="card" style={{ marginTop: 18, padding: '16px 18px' }}>
-      <div className="row" style={{ justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-        <span className="lbl" style={{ color }}>Correo</span>
-        {e.configurado && (
-          <button className="btn btn-sm" disabled={mirando} onClick={revisar}>
-            {mirando ? <><span className="spin" /> Mirando…</> : 'Mirar la bandeja ahora'}
-          </button>
-        )}
-      </div>
-
-      {!e.configurado ? (
-        <p className="t-body" style={{ marginTop: 8 }}>
-          Sin casilla configurada: el mail se comporta como los demás canales, simulado.
-          Se enchufa poniendo <code>MAIL_USUARIO</code> y <code>MAIL_CLAVE</code> en el <code>.env</code>.
-        </p>
-      ) : (
-        <>
-          <p className="t-body" style={{ marginTop: 8 }}>
-            <strong>{e.casilla}</strong>{' '}
-            {e.vigilando
-              ? `— mirando la bandeja cada ${e.intervalo} segundos.`
-              : '— configurada, pero el vigía no arrancó. ¿Reiniciaste el server?'}
-          </p>
-          <p className="t-small" style={{ marginTop: 6 }}>
-            {e.enviados} enviados · {e.recibidos} recibidos
-            {e.ultima_revision && ` · última mirada ${e.ultima_revision.replace('T', ' ')}`}
-          </p>
-        </>
-      )}
-
-      {roto && (
-        <p className="t-body" style={{
-          marginTop: 10, color: 'var(--ink)', background: 'var(--amber-soft)',
-          border: '1px solid var(--amber-line)', borderRadius: 8, padding: '10px 12px',
-          fontFamily: 'ui-monospace, monospace', fontSize: 13,
-        }}>{e.ultimo_error}</p>
-      )}
     </div>
   )
 }

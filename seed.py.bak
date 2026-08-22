@@ -4,14 +4,10 @@ si algo se rompe o si terminó un ensayo de la demo, `python seed.py` y volvés
 exactamente a la posición de arranque.
 """
 import json
-import os
 from datetime import datetime, timedelta
 
-from app.config import cargar as cargar_env
 
-cargar_env()          # para leer MAIL_CLIENTE_DEMO del .env
-
-from app.db import crear_tablas, engine, sesion  # noqa: E402
+from app.db import crear_tablas, engine, sesion
 from app.models import Alias, Briefing, Business, Commitment, Identity, Message
 
 AHORA = datetime.now()
@@ -604,14 +600,6 @@ def sembrar():
             por_nombre[c["nombre"]] = a.id
 
             for canal, valor in c["identidades"]:
-                # MAIL_CLIENTE_DEMO le pone una dirección REAL al primer cliente,
-                # para poder mandarle un mail de verdad y ver el ida y vuelta
-                # completo sin tener que fusionar nada. Sobrevive a cada reset,
-                # que es lo que importa cuando se ensaya la demo tres veces.
-                if canal == "mail" and c["nombre"] == "Panadería La Espiga":
-                    real = (os.environ.get("MAIL_CLIENTE_DEMO") or "").strip()
-                    if real:
-                        valor = real
                 s.add(Identity(alias_id=a.id, canal=canal, valor=valor))
 
             canales = set()

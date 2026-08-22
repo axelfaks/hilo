@@ -52,7 +52,10 @@ class Message(SQLModel, table=True):
     direccion: str                    # entrante | saliente
     autor: str                        # cliente | humano | ia
     asunto: str = ""                  # solo el mail lo usa
-    texto: str
+    texto: str                        # el texto plano, limpio de citas y firma
+    html: str = ""                    # el cuerpo original del mail, para verlo como en Gmail
+    cc: str = ""                      # con copia (solo mail)
+    cco: str = ""                     # con copia oculta: la ve quien envió, nadie más
     resumen: str = ""                 # una linea: que pasó en este mensaje
     adjuntos_json: str = "[]"
     aprobado_por: str = ""            # si la IA la escribió y un humano la aprobó

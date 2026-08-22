@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { api, canalColor } from '../api.js'
-import CuerpoMail from '../CuerpoMail.jsx'
 import { ir } from '../App.jsx'
 
 /* La cola — estructura de Toto (iteración 2). Dos vistas:
@@ -114,8 +113,7 @@ export default function Cola() {
 
           <div id="sinid">
             {d.sin_identificar.map(m => (
-              <SinIdentificar key={m.mensaje_id} m={m} pulso={pulso} clientes={d.clientes || []}
-                onHecho={() => api.cola().then(setD)} />
+              <SinIdentificar key={m.mensaje_id} m={m} pulso={pulso} onHecho={() => api.cola().then(setD)} />
             ))}
           </div>
 
@@ -203,128 +201,27 @@ function Stat({ clase, n, texto, activo, onClick, flecha = 'Ver ↓' }) {
   )
 }
 
-/* ---------------------------------------------------------------------------
-   MENSAJE SIN IDENTIFICAR
-
-   Dos reglas que se ganaron a los golpes:
-
-   1. La tarjeta se muestra SIEMPRE, haya sugerencia o no. Antes hacía
-      `if (!m.sugerencia) return null` y el mensaje desaparecía de la cola: el
-      cliente escribía y no lo veía nadie.
-
-   2. Cuando no hay un motivo de verdad, la acción principal es crear un cliente
-      nuevo. Afirmar un parecido inventado es peor que decir "no sé": el vendedor
-      fusiona mal una vez y ya no le cree nunca más al sistema.
---------------------------------------------------------------------------- */
-
-function SinIdentificar({ m, pulso, onHecho, clientes = [] }) {
+function SinIdentificar({ m, pulso, onHecho }) {
   const [ocupado, setOcupado] = useState(false)
-  const [modo, setModo] = useState(null)          // null | 'nuevo' | 'asociar'
-  const [nombre, setNombre] = useState('')
-  const [elegido, setElegido] = useState('')
-  const [error, setError] = useState('')
-  const [confirmar, setConfirmar] = useState(false)
-
-  const sug = m.sugerencia
-  const otros = clientes.filter(c => c.id !== sug?.alias_id)
-
-  // juan.rodriguez@… -> "Juan Rodriguez", como punto de partida editable
-  const nombreSugerido = () => {
-    const local = (m.remitente || '').split('@')[0]
-    return local.split(/[._-]+/).filter(Boolean)
-      .map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ')
-  }
-
-  const abrir = (cual) => {
-    setError('')
-    if (cual === 'nuevo' && !nombre) setNombre(nombreSugerido())
-    setModo(modo === cual ? null : cual)
-  }
-
-  const correr = async (fn) => {
-    setOcupado(true); setError('')
-    try { await fn(); onHecho() }
-    catch (e) { setError(e.message); setOcupado(false) }
-  }
-
+  if (!m.sugerencia) return null
   return (
     <div className={`card unknown-card ${pulso ? 'pulse' : ''}`}>
       <div className="uc-top">
         <span className="badge badge--unknown">Sin identificar</span>
         <span className="t-small">{m.remitente}</span>
-        <button className="btn btn--icon uc-tacho" disabled={ocupado}
-          title="Descartar este mensaje" aria-label="Descartar este mensaje"
-          onClick={() => { if (confirmar) correr(() => api.borrarMensaje(m.mensaje_id)); else setConfirmar(true) }}>
-          {confirmar ? '¿Seguro?' : '\u{1F5D1}'}
-        </button>
       </div>
-      <CuerpoMail html={m.html} texto={m.texto} max={240} />
-
+      <p className="uc-quote">«{m.texto}»</p>
       <p className="uc-why">
-        {sug
-          ? <>Puede ser <b>{sug.nombre}</b> ({sug.confianza} % de confianza): {sug.motivo}</>
-          : <>No encontré a quién se parece. Nadie que ya tengas cargado comparte
-             nada con esta dirección, así que probablemente sea alguien nuevo.</>}
+        La IA cree que es <b>{m.sugerencia.nombre}</b> con {m.sugerencia.confianza} % de confianza:{' '}
+        {m.sugerencia.motivo}
       </p>
-
       <div className="uc-acts">
-        {sug ? (
-          <>
-            <button className="btn btn--primary btn-sm" disabled={ocupado}
-              onClick={() => correr(() => api.fusionar(m.mensaje_id, sug.alias_id))}>
-              {ocupado ? 'Guardando…' : `Sí, es ${sug.nombre}`}
-            </button>
-            <button className="btn btn--secondary btn-sm" disabled={ocupado}
-              onClick={() => abrir('asociar')}>Es otro cliente</button>
-            <button className="btn btn--secondary btn-sm" disabled={ocupado}
-              onClick={() => abrir('nuevo')}>Crear un cliente nuevo</button>
-          </>
-        ) : (
-          <>
-            <button className="btn btn--primary btn-sm" disabled={ocupado}
-              onClick={() => abrir('nuevo')}>Crear un cliente nuevo</button>
-            <button className="btn btn--secondary btn-sm" disabled={ocupado}
-              onClick={() => abrir('asociar')}>Asociarlo a un cliente</button>
-          </>
-        )}
+        <button className="btn btn--primary btn-sm" disabled={ocupado}
+          onClick={async () => { setOcupado(true); await api.fusionar(m.mensaje_id, m.sugerencia.alias_id); onHecho() }}>
+          {ocupado ? 'Fusionando…' : `Sí, es ${m.sugerencia.nombre}`}
+        </button>
+        <button className="btn btn--secondary btn-sm">Crear un alias nuevo</button>
       </div>
-
-      {modo === 'nuevo' && (
-        <div className="uc-form">
-          <label className="lbl" htmlFor={`n${m.mensaje_id}`}>¿Cómo se llama?</label>
-          <div className="row" style={{ gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
-            <input id={`n${m.mensaje_id}`} type="text" value={nombre} style={{ flex: 1, minWidth: 180 }}
-              placeholder="Panadería La Espiga" onChange={e => setNombre(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && nombre.trim()) correr(() => api.nuevoDesdeMensaje(m.mensaje_id, { nombre })) }} />
-            <button className="btn btn--primary btn-sm" disabled={ocupado || !nombre.trim()}
-              onClick={() => correr(() => api.nuevoDesdeMensaje(m.mensaje_id, { nombre }))}>
-              {ocupado ? 'Creando…' : 'Crear'}
-            </button>
-          </div>
-          <p className="t-small" style={{ marginTop: 6 }}>
-            Se crea con esta dirección ya cargada, así el próximo mail entra solo a su hilo.
-          </p>
-        </div>
-      )}
-
-      {modo === 'asociar' && (
-        <div className="uc-form">
-          <label className="lbl" htmlFor={`a${m.mensaje_id}`}>¿De quién es?</label>
-          <div className="row" style={{ gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
-            <select id={`a${m.mensaje_id}`} value={elegido} style={{ flex: 1, minWidth: 180 }}
-              onChange={e => setElegido(e.target.value)}>
-              <option value="">Elegí un cliente…</option>
-              {otros.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-            </select>
-            <button className="btn btn--primary btn-sm" disabled={ocupado || !elegido}
-              onClick={() => correr(() => api.fusionar(m.mensaje_id, Number(elegido)))}>
-              {ocupado ? 'Guardando…' : 'Asociar'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {error && <p className="uc-why" style={{ color: 'var(--red)' }}>{error}</p>}
     </div>
   )
 }

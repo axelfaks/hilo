@@ -4,7 +4,7 @@ from datetime import datetime
 
 from sqlmodel import Session, select
 
-from . import ai, correo
+from . import ai
 from .logic import (
     CANALES, CANALES_SALIENTES, dias_de_contacto, pelota, por_canal, ritmo,
     temperatura, transcribir_hilo,
@@ -13,32 +13,6 @@ from .models import Alias, Briefing, Business, Commitment, Identity, Message
 
 
 # ------------------------------------------------------------------ utilidades
-
-
-def direccion_de(s: Session, alias_id: int, canal: str = "mail") -> str:
-    """La dirección del cliente en ese canal, si la tenemos."""
-    fila = s.exec(
-        select(Identity).where(Identity.alias_id == alias_id, Identity.canal == canal)
-    ).first()
-    return (fila.valor if fila else "").strip()
-
-
-def despachar(s: Session, alias: Alias, canal: str, asunto: str, texto: str,
-              cc: str = "", cco: str = "") -> tuple[bool, str]:
-    """Saca el mensaje por el canal de verdad, si ese canal existe de verdad.
-
-    Hoy el único es el mail. Los demás siguen siendo simulados y devuelven
-    (False, "") sin ruido: no es un error que WhatsApp no salga, es que todavía
-    no está enchufado. Devuelve (salió de verdad, error).
-    """
-    if canal != "mail" or not correo.configurado():
-        return False, ""
-    destino = direccion_de(s, alias.id, "mail")
-    if not destino:
-        return False, f"{alias.nombre} no tiene una dirección de mail cargada"
-    return correo.enviar(destino, asunto, texto, cc=cc, cco=cco)
-
-
 
 def negocio(s: Session) -> Business:
     b = s.exec(select(Business)).first()
@@ -81,49 +55,8 @@ def resolver(s: Session, canal: str, valor: str) -> int | None:
     return ident.alias_id if ident else None
 
 
-# Dominios donde compartir el dominio no significa NADA: que dos personas usen
-# Gmail no las hace la misma empresa. Sin esta lista, el primer mail que llega de
-# un particular "se parece" al primer cliente que también tenga un Gmail, y el
-# sistema afirma con cara seria algo que es falso.
-DOMINIOS_PUBLICOS = {
-    "gmail.com", "googlemail.com", "hotmail.com", "hotmail.com.ar", "hotmail.es",
-    "outlook.com", "outlook.com.ar", "outlook.es", "live.com", "live.com.ar",
-    "yahoo.com", "yahoo.com.ar", "yahoo.es", "icloud.com", "me.com", "mac.com",
-    "aol.com", "proton.me", "protonmail.com", "gmx.com", "zoho.com", "mail.com",
-    "yandex.com", "fibertel.com.ar", "speedy.com.ar", "arnet.com.ar",
-    "ciudad.com.ar", "hotmail.com.mx", "terra.com.ar",
-}
-
-# Debajo de esto no se sugiere nada: una corazonada floja mostrada como dato es
-# peor que un "no sé". El vendedor termina fusionando mal y ensuciando un hilo.
-CONFIANZA_MINIMA = 55
-
-
-def _dominio(direccion: str) -> str:
-    d = (direccion or "").strip().lower()
-    return d.split("@")[-1] if "@" in d else ""
-
-
-def _partes_del_nombre(texto: str) -> set:
-    """Palabras de cuatro letras o más, sin acentos, para comparar nombres.
-
-    Sin sacar los acentos, "rodriguez" escrito en una dirección de mail nunca
-    coincide con "Rodríguez" escrito en la ficha, que es justo el caso que esto
-    tiene que detectar.
-    """
-    import re as _re
-    import unicodedata as _ud
-    plano = _ud.normalize("NFKD", texto or "").encode("ascii", "ignore").decode()
-    return {p for p in _re.split(r"[^a-z]+", plano.lower()) if len(p) >= 4}
-
-
 def sugerir_alias(s: Session, remitente: str, texto: str) -> tuple:
-    """Para los mensajes que llegan sin alias: a quien se parecen.
-
-    La regla de la casa: si no hay un motivo de verdad, se devuelve None. Un
-    sistema que inventa parecidos hace que el vendedor deje de creerle, y
-    entonces no sirve para nada ni siquiera cuando acierta.
-    """
+    """Para los mensajes que llegan sin alias: a quien se parecen."""
     candidatos = []
     for a in s.exec(select(Alias)):
         ids = [i.valor for i in s.exec(select(Identity).where(Identity.alias_id == a.id))]
@@ -132,36 +65,13 @@ def sugerir_alias(s: Session, remitente: str, texto: str) -> tuple:
         return None, 0, ""
     r = ai.identificar(remitente, texto, candidatos)
     if r.get("alias_id"):
-        confianza = int(r.get("confianza", 0))
-        if confianza >= CONFIANZA_MINIMA:
-            return r["alias_id"], confianza, r.get("motivo", "")
-        return None, 0, ""
-    if r:
-        # La IA contestó, leyó el hilo entero y dijo que no se parece a ninguno.
-        # Una heurística de dominio no sabe más que ella: respetar el "no sé".
-        return None, 0, ""
-
-    # De acá para abajo: no hubo IA. Solo evidencia dura, nada de corazonadas.
-    dominio = _dominio(remitente)
-    if dominio and dominio not in DOMINIOS_PUBLICOS:
+        return r["alias_id"], int(r.get("confianza", 0)), r.get("motivo", "")
+    # sin IA: el dominio del mail alcanza para una sugerencia decente
+    if "@" in remitente:
+        dominio = remitente.split("@")[-1].lower()
         for c in candidatos:
-            # comparación exacta de dominio: "mail.com" no es "gmail.com"
-            if any(_dominio(i) == dominio for i in c["identidades"] if "@" in i):
-                return c["id"], 70, f"Le escriben desde el mismo dominio: @{dominio}"
-
-    # El nombre en la dirección: juan.rodriguez@… contra el contacto del cliente.
-    # Hacen falta DOS palabras en común, no una: "juan@" coincidiendo con "Juan
-    # Rodríguez" no es evidencia de nada, hay un Juan en cada cartera de clientes.
-    local = _partes_del_nombre(remitente.split("@")[0] if "@" in remitente else "")
-    if len(local) >= 2:
-        for c in candidatos:
-            propias = _partes_del_nombre(c["nombre"] + " " + c.get("contacto", ""))
-            comunes = local & propias
-            if len(comunes) >= 2:
-                return (c["id"], 65,
-                        "El nombre de la dirección coincide con " + c["nombre"] +
-                        ": " + ", ".join(sorted(comunes)))
-
+            if any(dominio in i.lower() for i in c["identidades"] if "@" in i):
+                return c["id"], 85, f"Mismo dominio de mail: {dominio}"
     return None, 0, ""
 
 
@@ -344,18 +254,12 @@ def actuar(s: Session, alias: Alias, canal_respuesta: str, simulado: bool = Fals
 
     envia_solo = nivel >= 4 and not freno and _en_horario(rls)
     if envia_solo:
-        # Si el canal es real, el mensaje sale de verdad ANTES de quedar en el
-        # hilo: que el hilo diga "enviado" para algo que nunca salió es peor que
-        # no enviarlo. Si falla, queda registrado igual y el error va al estado
-        # del correo — el vendedor lo ve en Configuración.
-        salio, error = despachar(s, alias, canal_respuesta, borrador["asunto"], borrador["texto"])
         s.add(Message(
             alias_id=alias.id, canal=canal_respuesta, direccion="saliente", autor="ia",
             texto=borrador["texto"], asunto=borrador["asunto"], simulado=simulado,
         ))
         s.commit()
-        return {"accion": "enviado", "nivel": nivel, "borrador": borrador,
-                "por_mail": salio, "error_envio": error}
+        return {"accion": "enviado", "nivel": nivel, "borrador": borrador}
 
     accion = "borrador_para_aprobar" if nivel == 3 else "borrador"
     if freno:
@@ -366,12 +270,12 @@ def actuar(s: Session, alias: Alias, canal_respuesta: str, simulado: bool = Fals
 # ------------------------------------------------------------------- ingesta
 
 def ingesta(s: Session, canal: str, remitente: str, texto: str, adjuntos: list | None = None,
-            simulado: bool = False, html: str = "", asunto: str = "") -> dict:
+            simulado: bool = False) -> dict:
     """La UNICA puerta por la que entra un mensaje. Un mail real, manana, entra por aca."""
     alias_id = resolver(s, canal, remitente)
     msg = Message(
         alias_id=alias_id, canal=canal, direccion="entrante", autor="cliente",
-        texto=texto, remitente=remitente, simulado=simulado, html=html, asunto=asunto,
+        texto=texto, remitente=remitente, simulado=simulado,
         adjuntos_json=json.dumps(adjuntos or [], ensure_ascii=False),
     )
 
