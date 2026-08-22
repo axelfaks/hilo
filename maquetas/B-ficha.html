@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hilo — Opción B · Ficha</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Public+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --paper:#F6F8F7; --card:#FFFFFF; --line:#E1E7E4; --line-2:#EDF1EF;
+  --ink-3:#879591;
+  --teal:#0E6B5C; --teal-2:#0A5347; --teal-soft:#E3EFEC;
+  --red:#AE3B2C; --red-soft:#FAE8E4;
+  --amber:#96690F; --amber-soft:#F8EFD9;
+  --ch-mail:#96690F; --ch-wa:#1C7247; --ch-ig:#A82F60; --ch-tg:#1A6F9E; --ch-call:#544896;
+  --serif:"Newsreader",ui-serif,Georgia,"Times New Roman",serif;
+  --sans:"Public Sans",ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+.badge-opt{position:fixed;left:14px;bottom:14px;z-index:50;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:6px 13px;box-shadow:0 2px 10px rgba(20,31,28,.06)}
+.lbl{font-size:11px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3)}
+
+.bar{background:var(--card);border-bottom:1px solid var(--line)}
+.bar-in{max-width:1180px;margin:0 auto;padding:0 32px;height:54px;display:flex;align-items:center;gap:12px}
+.logo{font-family:var(--serif);font-size:19px;font-weight:600;letter-spacing:-.01em;color:var(--teal)}
+.crumb{font-size:13px;color:var(--ink-3)}
+.crumb b{color:var(--ink-2);font-weight:500}
+.bar-right{margin-left:auto;display:flex;gap:8px;align-items:center}
+.tag{font-size:12px;color:var(--ink-2);background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:4px 11px}
+.tag b{font-variant-numeric:tabular-nums;color:var(--ink)}
+
+.wrap{max-width:1180px;margin:0 auto;padding:34px 32px 70px;display:grid;grid-template-columns:minmax(0,1fr) 292px;gap:34px;align-items:start}
+
+/* hero */
+.hero{margin-bottom:24px}
+.h-name{font-family:var(--serif);font-size:38px;font-weight:500;letter-spacing:-.025em;line-height:1.1;text-wrap:balance}
+.h-sub{font-size:14.5px;color:var(--ink-2);margin-top:8px}
+.h-sub i{font-style:normal;color:var(--ink-3);padding:0 7px}
+
+/* pipeline */
+.pipe{display:flex;gap:5px;margin-top:20px}
+.pstep{flex:1;padding:9px 10px 10px;border-radius:6px;background:var(--card);border:1px solid var(--line);position:relative}
+.pstep .n{font-size:10.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);display:block}
+.pstep.done{background:var(--teal-soft);border-color:#CADFD9}
+.pstep.done .n{color:var(--teal-2)}
+.pstep.now{background:var(--teal);border-color:var(--teal)}
+.pstep.now .n{color:#CDE8E1}
+.pstep.now .t{color:#fff}
+.pstep .t{font-size:13px;font-weight:600;margin-top:2px;display:block}
+.pipe-note{font-size:12.5px;color:var(--ink-3);margin-top:9px;display:flex;gap:6px;align-items:center}
+.link{color:var(--teal);text-decoration:none;border-bottom:1px solid #B7D6CE;font-weight:500}
+.link:hover{border-bottom-color:var(--teal)}
+.link:focus-visible{outline:2px solid var(--teal);outline-offset:2px;border-radius:2px}
+
+/* briefing */
+.card{background:var(--card);border:1px solid var(--line);border-radius:11px}
+.brief{margin-top:26px;overflow:hidden}
+.brief-top{padding:22px 26px 20px;border-bottom:1px solid var(--line-2);background:linear-gradient(180deg,#FDF6F4,var(--card))}
+.ball{display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--red);background:var(--red-soft);border-radius:999px;padding:5px 12px}
+.ball-txt{font-family:var(--serif);font-size:26px;font-weight:500;letter-spacing:-.02em;line-height:1.25;margin-top:13px;text-wrap:balance;max-width:26em}
+.ball-why{font-size:14px;color:var(--ink-2);margin-top:9px;max-width:44em}
+.brief-grid{display:grid;grid-template-columns:1fr 1fr;gap:0}
+.bcell{padding:20px 26px;border-right:1px solid var(--line-2);border-bottom:1px solid var(--line-2)}
+.bcell:nth-child(2n){border-right:0}
+.bcell p{font-size:14px;color:var(--ink-2);margin-top:9px;line-height:1.6}
+.bul{list-style:none;margin-top:10px;display:flex;flex-direction:column;gap:9px}
+.bul li{display:grid;grid-template-columns:15px 1fr;gap:7px;font-size:14px;color:var(--ink-2);line-height:1.55}
+.bul li::before{content:"—";color:var(--ink-3)}
+.cmt{display:grid;grid-template-columns:auto 1fr;gap:11px;align-items:start;margin-top:11px}
+.cmt-ico{width:21px;height:21px;border-radius:5px;display:grid;place-items:center;font-size:12px;font-weight:700}
+.late{background:var(--red-soft);color:var(--red)}
+.wait{background:var(--teal-soft);color:var(--teal-2)}
+.cmt b{display:block;font-size:14px;font-weight:600}
+.cmt small{font-size:12.5px;color:var(--ink-3)}
+.rhythm{display:flex;align-items:baseline;gap:9px;margin-top:11px}
+.rhythm .num{font-family:var(--serif);font-size:31px;font-weight:500;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.rhythm .cap{font-size:13px;color:var(--ink-3)}
+.bar-track{height:6px;border-radius:4px;background:var(--line-2);margin-top:12px;overflow:hidden}
+.bar-track i{display:block;height:100%;width:82%;background:linear-gradient(90deg,#1C7247,#96690F,#AE3B2C)}
+
+/* draft */
+.draft{padding:22px 26px}
+.draft p{font-size:15px;line-height:1.68;color:var(--ink);max-width:60ch;margin-top:11px}
+.acts{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}
+.btn{font-family:var(--sans);font-size:13.5px;font-weight:600;border-radius:7px;padding:9px 15px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+.btn:hover{border-color:var(--ink-3)}
+.btn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+.btn-primary{background:var(--teal);border-color:var(--teal);color:#fff}
+.btn-primary:hover{background:var(--teal-2)}
+
+/* timeline */
+.sec-title{font-family:var(--serif);font-size:22px;font-weight:500;letter-spacing:-.02em;margin:38px 0 4px}
+.sec-note{font-size:13.5px;color:var(--ink-3);margin-bottom:18px}
+.tl{position:relative;padding-left:26px}
+.tl::before{content:"";position:absolute;left:5px;top:6px;bottom:6px;width:2px;background:var(--line)}
+.ev{position:relative;padding:0 0 22px}
+.ev::before{content:"";position:absolute;left:-25px;top:6px;width:12px;height:12px;border-radius:50%;border:2px solid var(--paper);background:var(--ink-3)}
+.ev-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.ev-chan{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase}
+.ev-who{font-size:13.5px;font-weight:600}
+.ev-date{font-size:12.5px;color:var(--ink-3);margin-left:auto;font-variant-numeric:tabular-nums}
+.ev-body{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:13px 16px;margin-top:8px;max-width:66ch}
+.ev-body p{font-size:14.5px;line-height:1.65;color:var(--ink-2)}
+.ev.mine .ev-body{background:#FBFCFB}
+.ai-tag{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#544896;background:#EFEDF9;border-radius:4px;padding:2px 7px}
+.new-tag{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--red);background:var(--red-soft);border-radius:4px;padding:2px 7px}
+.att{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.attbox{font-size:12px;color:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:5px 10px;background:var(--paper)}
+
+/* rail */
+.rail{position:sticky;top:22px;display:flex;flex-direction:column;gap:14px}
+.rcard{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:16px 17px}
+.ids{display:flex;flex-direction:column;gap:9px;margin-top:12px}
+.id{display:grid;grid-template-columns:auto 1fr;gap:9px;align-items:center;font-size:13px;color:var(--ink-2)}
+.cdot{width:8px;height:8px;border-radius:50%}
+.lvl{display:flex;flex-direction:column;gap:4px;margin-top:12px}
+.lv{display:grid;grid-template-columns:22px 1fr;gap:9px;align-items:center;padding:7px 9px;border-radius:7px;font-size:13px;color:var(--ink-3);border:1px solid transparent}
+.lv .k{font-size:11px;font-weight:700;color:var(--ink-3);text-align:center}
+.lv.on{color:var(--ink-2)}
+.lv.cur{background:var(--teal-soft);border-color:#CADFD9;color:var(--teal-2);font-weight:600}
+.lv.cur .k{color:var(--teal)}
+.guard{font-size:12.5px;color:var(--ink-3);line-height:1.55;margin-top:12px;padding-top:12px;border-top:1px solid var(--line-2)}
+</style>
+</head>
+<body>
+<div class="badge-opt">Opción B · Ficha</div>
+
+<div class="bar"><div class="bar-in">
+  <span class="logo">Hilo</span>
+  <span class="crumb">Clientes / <b>Panadería La Espiga</b></span>
+  <div class="bar-right">
+    <span class="tag"><b>4</b> te esperan</span>
+    <span class="tag"><b>3</b> enfriándose</span>
+    <span class="tag"><b>1</b> sin identificar</span>
+  </div>
+</div></div>
+
+<div class="wrap">
+<main>
+  <div class="hero">
+    <h1 class="h-name">Panadería La Espiga</h1>
+    <p class="h-sub">Juan Rodríguez, dueño<i>·</i>24 días de contacto<i>·</i>4 canales<i>·</i>última señal hace 2 días</p>
+    <div class="pipe">
+      <div class="pstep done"><span class="n">01</span><span class="t">Nuevo</span></div>
+      <div class="pstep done"><span class="n">02</span><span class="t">Calificado</span></div>
+      <div class="pstep done"><span class="n">03</span><span class="t">Reunión</span></div>
+      <div class="pstep done"><span class="n">04</span><span class="t">Propuesta</span></div>
+      <div class="pstep now"><span class="n">05 · ahora</span><span class="t">Negociación</span></div>
+      <div class="pstep"><span class="n">06</span><span class="t">Cierre</span></div>
+    </div>
+    <p class="pipe-note">Estados deducidos del hilo. La IA propuso este flujo leyendo tu negocio — <a class="link" href="#">editarlo</a></p>
+  </div>
+
+  <section class="card brief">
+    <div class="brief-top">
+      <span class="ball">● La pelota es tuya</span>
+      <h2 class="ball-txt">Hace 2 días que Juan espera el precio revisado que le prometiste.</h2>
+      <p class="ball-why">Y hay fecha límite: su socia Marina viaja el viernes y quieren definirlo antes.</p>
+    </div>
+    <div class="brief-grid">
+      <div class="bcell">
+        <span class="lbl">Quién es</span>
+        <p>Juan Rodríguez, dueño de tres panaderías en Villa Urquiza. Toma los pedidos por WhatsApp a mano y pierde ventas los sábados. No decide solo: la última palabra la comparte con su socia Marina.</p>
+      </div>
+      <div class="bcell">
+        <span class="lbl">Su ritmo</span>
+        <div class="rhythm"><span class="num">51 h</span><span class="cap">de silencio de tu lado<br>Juan suele contestar en 3 h</span></div>
+        <div class="bar-track"><i></i></div>
+      </div>
+      <div class="bcell">
+        <span class="lbl">Lo último que se habló</span>
+        <ul class="bul">
+          <li>Aceptaron la propuesta en lo funcional; el freno es el precio de arrancar con las tres sucursales juntas.</li>
+          <li>Le prometiste una alternativa el lunes 14 y no salió.</li>
+          <li>Apareció una fecha dura: Marina viaja el viernes 22.</li>
+        </ul>
+      </div>
+      <div class="bcell">
+        <span class="lbl">Compromisos abiertos</span>
+        <div class="cmt"><span class="cmt-ico late">!</span><div><b>Enviar el presupuesto revisado</b><small>Vos · vencía el 18 de agosto · 4 días tarde</small></div></div>
+        <div class="cmt"><span class="cmt-ico wait">⟳</span><div><b>Confirmar con Marina</b><small>Juan · antes del viernes</small></div></div>
+      </div>
+    </div>
+    <div class="draft">
+      <span class="lbl">Lo que la IA mandaría</span>
+      <p>Juan, tenés razón, me colgué con el número y te pido disculpas. Va el revisado: <b>15 % abajo</b> por tomar las tres sucursales juntas, con la migración de los pedidos históricos incluida. Si les sirve, lo activamos el lunes y el sábado ya lo cubren con el sistema. ¿Lo vemos 15 minutos mañana con Marina antes de que viaje?</p>
+      <div class="acts">
+        <button class="btn btn-primary">Aprobar y enviar por mail</button>
+        <button class="btn">Editar</button>
+        <button class="btn">Pedir otro tono</button>
+        <button class="btn">Registrar una llamada</button>
+      </div>
+    </div>
+  </section>
+
+  <h2 class="sec-title">La conversación completa</h2>
+  <p class="sec-note">Todo lo que pasó con Juan, sin importar por dónde entró.</p>
+
+  <div class="tl">
+    <div class="ev">
+      <div class="ev-head"><span class="ev-chan" style="color:var(--ch-mail)">Mail</span><span class="ev-who">Juan Rodríguez</span><span class="new-tag">sin responder</span><span class="ev-date">20 ago · 08:31</span></div>
+      <div class="ev-body"><p>Buen día Axel. Quedamos en que me mandabas el número nuevo y todavía no me llegó. Seguimos interesados pero necesitamos definirlo esta semana, porque Marina se va de viaje el viernes.</p></div>
+    </div>
+    <div class="ev mine">
+      <div class="ev-head"><span class="ev-chan" style="color:var(--ch-wa)">WhatsApp</span><span class="ev-who">Hilo</span><span class="ai-tag">IA · aprobado por Axel</span><span class="ev-date">14 ago · 09:02</span></div>
+      <div class="ev-body"><p>Juan, buenísimo que les cierre. Déjenme revisar los números y te acerco una alternativa para arrancar sin resignar sucursales. Te escribo el lunes.</p></div>
+    </div>
+    <div class="ev">
+      <div class="ev-head"><span class="ev-chan" style="color:var(--ch-wa)">WhatsApp</span><span class="ev-who">Juan Rodríguez</span><span class="ev-date">12 ago · 21:07</span></div>
+      <div class="ev-body"><p>Lo vimos con Marina. Nos cierra la propuesta pero el precio nos queda justo para arrancar con las tres juntas.</p></div>
+    </div>
+    <div class="ev mine">
+      <div class="ev-head"><span class="ev-chan" style="color:var(--ch-mail)">Mail</span><span class="ev-who">Axel</span><span class="ev-date">5 ago · 10:12</span></div>
+      <div class="ev-body"><p>Te paso la propuesta para las tres sucursales, con el módulo de pedidos y la migración incluida.</p>
+      <div class="att"><span class="attbox">propuesta-laespiga-v1.pdf</span></div></div>
+    </div>
+    <div class="ev">
+      <div class="ev-head"><span class="ev-chan" style="color:var(--ch-call)">Llamada</span><span class="ev-who">Registrada por Axel · 22 min</span><span class="ai-tag">audio transcripto</span><span class="ev-date">2 ago · 16:40</span></div>
+      <div class="ev-body"><p>Tiene tres sucursales. Hoy toman los pedidos por WhatsApp a mano y los pasan a un cuaderno. Lo que más le duele es perder pedidos los sábados a la mañana, que es cuando se satura. La decisión la toma con su socia Marina.</p>
+      <div class="att"><span class="attbox">audio-2ago.m4a · 22:14</span><span class="attbox">foto-cuaderno.jpg</span></div></div>
+    </div>
+    <div class="ev">
+      <div class="ev-head"><span class="ev-chan" style="color:var(--ch-ig)">Instagram</span><span class="ev-who">@laespiga.ok</span><span class="ev-date">28 jul · 19:55</span></div>
+      <div class="ev-body"><p>Hola! Vi que hacen sistemas de pedidos para panaderías. Cuánto sale?</p></div>
+    </div>
+  </div>
+</main>
+
+<aside class="rail">
+  <div class="rcard">
+    <span class="lbl">Un alias, cuatro puertas</span>
+    <div class="ids">
+      <div class="id"><i class="cdot" style="background:var(--ch-mail)"></i>juan.rodriguez@laespiga.com.ar</div>
+      <div class="id"><i class="cdot" style="background:var(--ch-wa)"></i>+54 9 11 5555-1234</div>
+      <div class="id"><i class="cdot" style="background:var(--ch-ig)"></i>@laespiga.ok</div>
+      <div class="id"><i class="cdot" style="background:var(--ch-tg)"></i>@jrlaespiga</div>
+    </div>
+    <p class="guard"><b style="color:var(--ink-2)">1 mensaje sin identificar.</b> marina.f@laespiga.com.ar se parece a este alias (92 %). <a class="link" href="#">Revisar</a></p>
+  </div>
+
+  <div class="rcard">
+    <span class="lbl">Autonomía de la IA</span>
+    <div class="lvl">
+      <div class="lv on"><span class="k">0</span>Silencio</div>
+      <div class="lv on"><span class="k">1</span>Solo observa y resume</div>
+      <div class="lv on"><span class="k">2</span>Deja el borrador</div>
+      <div class="lv cur"><span class="k">3</span>Pide permiso para enviar</div>
+      <div class="lv"><span class="k">4</span>Responde sola con barandas</div>
+      <div class="lv"><span class="k">5</span>Autónoma total</div>
+    </div>
+    <p class="guard">No ofrece más de 15 % de descuento. Escala si nombran un competidor. No escribe fuera de 8 a 20 h.</p>
+  </div>
+</aside>
+</div>
+</body>
+</html>

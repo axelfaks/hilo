@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hilo — La cola</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Public+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* ============================================================
+   HILO — Sistema de diseño (embebido). Todo sale de :root.
+   ============================================================ */
+:root{
+  --bg:#F6F8F7; --surface:#FFFFFF;
+  --line:#E1E7E4; --line-soft:#EDF1EF;
+  --ink:#141F1C; --ink-2:#41504B; --ink-3:#879591;
+  --accent:#0E6B5C; --accent-strong:#0A5347; --accent-soft:#E3EFEC; --accent-line:#CADFD9; --on-accent:#FFFFFF;
+  --ch-mail:#96690F; --ch-mail-soft:#F5EEDD;
+  --ch-wa:#1C7247;   --ch-wa-soft:#E1EFE7;
+  --ch-ig:#A82F60;   --ch-ig-soft:#F7E6EE;
+  --ch-tg:#1A6F9E;   --ch-tg-soft:#E1EEF5;
+  --ch-call:#544896; --ch-call-soft:#ECEAF6;
+  --st-yours:#AE3B2C;   --st-yours-soft:#FAE8E4;   --st-yours-line:#F0D2CB;
+  --st-waiting:#0A5347; --st-waiting-soft:#E3EFEC;
+  --st-cooling:#96690F; --st-cooling-soft:#F8EFD9;
+  --st-unknown:#5B6B72; --st-unknown-soft:#EAEEF0; --st-unknown-line:#D7DEE0;
+  --score-alta:#AE3B2C; --score-media:#D98E00; --score-baja:#1C7247;
+  --font-serif:"Newsreader",ui-serif,Georgia,"Times New Roman",serif;
+  --font-sans:"Public Sans",ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --fs-display:38px; --lh-display:1.1;
+  --fs-title:26px;   --lh-title:1.25;
+  --fs-heading:20px; --lh-heading:1.3;
+  --fs-body:15px;    --lh-body:1.55;
+  --fs-small:13px;   --lh-small:1.5;
+  --fs-micro:11px;   --lh-micro:1.4;
+  --w-regular:400; --w-medium:500; --w-semi:600; --w-bold:700;
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px; --sp-7:32px; --sp-8:48px;
+  --r-xs:4px; --r-sm:6px; --r-md:9px; --r-lg:11px; --r-pill:999px;
+  --shadow:0 2px 10px rgba(20,31,28,.06);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-sans);font-size:var(--fs-body);line-height:var(--lh-body);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+button{font-family:inherit}
+
+.label{display:inline-block;font-size:var(--fs-micro);line-height:var(--lh-micro);font-weight:var(--w-semi);letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg)}
+.grow{flex:1}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--sp-2);font-size:var(--fs-small);font-weight:var(--w-semi);line-height:1;padding:9px 15px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer;transition:background .12s,border-color .12s}
+.btn:hover{border-color:var(--ink-3)}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.btn--primary:hover{background:var(--accent-strong);border-color:var(--accent-strong)}
+.btn--sm{font-size:12.5px;padding:6px 11px}
+
+/* Badges de estado */
+.badge{display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:var(--w-bold);letter-spacing:.06em;text-transform:uppercase;border-radius:var(--r-pill);padding:5px 11px;white-space:nowrap}
+.badge::before{content:"●";font-size:8px;line-height:1}
+.badge--yours{background:var(--st-yours-soft);color:var(--st-yours)}
+.badge--waiting{background:var(--st-waiting-soft);color:var(--st-waiting)}
+.badge--cold{background:var(--st-cooling-soft);color:var(--st-cooling)}
+.badge--off{background:var(--bg);color:var(--ink-3);border:1px solid var(--line)}
+.badge--off::before{content:"○"}
+.badge--unknown{background:var(--st-unknown-soft);color:var(--st-unknown)}
+
+/* Chip de etapa */
+.chip-stage{font-size:11.5px;font-weight:var(--w-semi);color:var(--ink-2);background:var(--bg);border:1px solid var(--line);border-radius:var(--r-pill);padding:3px 10px;white-space:nowrap}
+
+.link{color:var(--accent);text-decoration:none;border-bottom:1px solid var(--accent-line);font-weight:var(--w-medium);cursor:pointer;background:none;border-top:0;border-left:0;border-right:0;padding:0;font-size:inherit}
+.link:hover{border-bottom-color:var(--accent)}
+
+/* ============================================================
+   BARRA
+   ============================================================ */
+.bar{background:var(--surface);border-bottom:1px solid var(--line)}
+.bar-in{max-width:1180px;margin:0 auto;padding:0 26px;height:54px;display:flex;align-items:center;gap:12px}
+.logo{font-family:var(--font-serif);font-size:19px;font-weight:var(--w-semi);letter-spacing:-.01em;color:var(--accent);background:none;border:0;cursor:pointer}
+
+.wrap-page{max-width:1180px;margin:0 auto;padding:30px 26px 80px}
+.h-display{font-family:var(--font-serif);font-size:var(--fs-display);font-weight:var(--w-medium);letter-spacing:-.025em;line-height:1.1;text-wrap:balance}
+.h-lead{font-size:14.5px;color:var(--ink-2);margin-top:7px;max-width:60ch}
+
+/* ============================================================
+   CONTADORES — ahora son filtros
+   ============================================================ */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:24px 0 26px}
+.stat{position:relative;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px 18px;cursor:pointer;transition:border-color .12s,box-shadow .12s,transform .06s}
+.stat:hover{border-color:var(--ink-3)}
+.stat:active{transform:translateY(1px)}
+.stat:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.stat .n{font-family:var(--font-serif);font-size:40px;font-weight:var(--w-medium);line-height:1;font-variant-numeric:tabular-nums}
+.stat .c{font-size:13px;color:var(--ink-2);margin-top:7px}
+.stat .go{position:absolute;top:14px;right:14px;font-size:12px;color:var(--ink-3);opacity:0;transition:opacity .12s}
+.stat:hover .go{opacity:1}
+.stat[aria-pressed="true"]{border-color:var(--ink);box-shadow:0 0 0 2px var(--ink) inset}
+.stat--yours .n{color:var(--st-yours)}
+.stat--new .n{color:var(--accent)}
+.stat--cold .n{color:var(--st-cooling)}
+.stat--unknown .n{color:var(--st-unknown)}
+
+/* ============================================================
+   TARJETA SIN IDENTIFICAR
+   ============================================================ */
+.unknown-card{border-color:var(--st-unknown-line);background:var(--st-unknown-soft);padding:16px 20px;margin-bottom:22px;transition:box-shadow .2s}
+.unknown-card.pulse{box-shadow:0 0 0 4px var(--st-unknown-line);animation:pulse 1.4s ease}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 4px var(--st-unknown-line)}50%{box-shadow:0 0 0 8px var(--st-unknown-soft)}}
+.uc-top{display:flex;align-items:center;gap:10px}
+.uc-quote{font-size:14.5px;color:var(--ink);margin:10px 0;line-height:1.6}
+.uc-why{font-size:12.5px;color:var(--ink-2);line-height:1.55}
+.uc-why b{color:var(--ink)}
+.uc-acts{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+
+/* ============================================================
+   TABLA / COLA
+   ============================================================ */
+.table-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.search{font-family:var(--font-sans);font-size:13px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:var(--r-sm);padding:9px 13px;width:240px}
+.search::placeholder{color:var(--ink-3)}
+.search:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.leg-bar{display:inline-block;width:4px;height:14px;border-radius:2px;vertical-align:-2px}
+.th-count{font-size:var(--fs-small);color:var(--ink-2);font-weight:var(--w-semi)}
+.th-count b{color:var(--ink);font-variant-numeric:tabular-nums}
+.fchip{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:var(--w-semi);color:var(--ink);background:var(--surface);border:1px solid var(--ink);border-radius:var(--r-pill);padding:4px 6px 4px 11px}
+.fchip button{border:0;background:var(--bg);color:var(--ink-2);width:17px;height:17px;border-radius:50%;cursor:pointer;font-size:11px;line-height:1;display:grid;place-items:center}
+.fchip button:hover{background:var(--line)}
+.sort{display:flex;align-items:center;gap:8px;margin-left:auto}
+.seg{display:inline-flex;background:var(--bg);border:1px solid var(--line);border-radius:var(--r-sm);padding:2px}
+.seg button{border:0;background:transparent;font:inherit;font-size:12.5px;font-weight:var(--w-semi);color:var(--ink-3);padding:6px 12px;border-radius:5px;cursor:pointer}
+.seg button:hover{color:var(--ink-2)}
+.seg button.on{background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
+
+.qhead{display:grid;grid-template-columns:1fr auto;gap:14px;padding:0 20px 8px;font-size:10.5px;font-weight:var(--w-bold);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.qlist{overflow:hidden}
+.qrow{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center;width:100%;text-align:left;background:var(--surface);border:0;border-top:1px solid var(--line-soft);padding:22px 20px;cursor:pointer;transition:background .1s}
+.qrow:first-child{border-top:0}
+.qrow:hover{background:#FAFBFB}
+.qrow.off{background:var(--bg)}
+.qrow.off:hover{background:#F1F4F3}
+/* Importancia = barra de color al costado izquierdo */
+.qrow[data-imp="3"]{box-shadow:inset 4px 0 0 var(--score-alta)}
+.qrow[data-imp="2"]{box-shadow:inset 4px 0 0 var(--score-media)}
+.qrow[data-imp="1"]{box-shadow:inset 4px 0 0 var(--score-baja)}
+
+/* Importancia (scoring) — pelotita de color: rojo alta, amarillo media, verde baja */
+.score-dot{width:12px;height:12px;border-radius:50%;flex:none;justify-self:center;box-shadow:0 0 0 3px var(--surface)}
+.score--alta{background:var(--score-alta)}
+.score--media{background:var(--score-media)}
+.score--baja{background:var(--score-baja)}
+
+.qmain{min-width:0}
+.qline1{display:flex;align-items:center;gap:9px}
+.qname{font-family:var(--font-serif);font-size:18px;font-weight:var(--w-bold);letter-spacing:-.02em;color:var(--ink)}
+.tag-new{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:var(--w-bold);letter-spacing:.06em;text-transform:uppercase;color:var(--st-yours);background:var(--st-yours-soft);border-radius:var(--r-xs);padding:2px 7px}
+.tag-new::before{content:"●";font-size:7px}
+.qline2{display:flex;align-items:center;gap:10px;margin-top:5px;min-width:0}
+.qprev{font-size:13px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.tag-venc{font-size:10.5px;font-weight:var(--w-semi);color:var(--st-cooling);background:var(--st-cooling-soft);border-radius:var(--r-xs);padding:2px 7px;white-space:nowrap;flex:none}
+.qch{display:inline-flex;gap:4px;flex:none}
+.cdot{width:8px;height:8px;border-radius:50%}
+
+.qright{display:flex;flex-direction:row;align-items:center;gap:12px;flex:none}
+.qtime{font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:14px;font-size:11.5px;color:var(--ink-3)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+
+/* ============================================================
+   SWITCH DE VISTA + DASHBOARD (embebido en la home)
+   ============================================================ */
+.head-row{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.viewswitch{display:inline-flex;background:var(--bg);border:1px solid var(--line);border-radius:var(--r-sm);padding:2px;margin-top:6px}
+.viewswitch button{border:0;background:transparent;font:inherit;font-size:13px;font-weight:var(--w-semi);color:var(--ink-3);padding:8px 16px;border-radius:5px;cursor:pointer}
+.viewswitch button:hover{color:var(--ink-2)}
+.viewswitch button.on{background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
+
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:22px 0}
+.kpi{padding:16px 18px}
+.kpi .v{font-family:var(--font-serif);font-size:38px;font-weight:var(--w-medium);line-height:1;margin-top:8px}
+.kpi .d{font-size:12.5px;color:var(--ink-2);margin-top:8px;line-height:1.4}
+.kpi .d b{color:var(--ink)}
+.kpi.k-yours .v{color:var(--st-yours)}
+.kpi.k-cold .v{color:var(--st-cooling)}
+.kpi.k-unknown .v{color:var(--st-unknown)}
+
+.grid{display:grid;grid-template-columns:1.2fr 1fr;gap:16px}
+.panel{padding:20px 22px}
+.panel h3{font-family:var(--font-serif);font-size:19px;font-weight:var(--w-medium);letter-spacing:-.01em}
+.panel .psub{font-size:12.5px;color:var(--ink-3);margin-top:2px;margin-bottom:16px}
+
+.fun-row{display:grid;grid-template-columns:120px 1fr 26px;align-items:center;gap:12px;margin:8px 0}
+.fun-label{font-size:13px;color:var(--ink-2)}
+.fun-track{height:22px;background:var(--line-soft);border-radius:var(--r-xs)}
+.fun-bar{height:100%;background:var(--accent);border-radius:var(--r-xs);min-width:6px}
+.fun-n{font-size:13px;font-weight:var(--w-bold);text-align:right;color:var(--ink)}
+
+.stack{display:flex;height:32px;gap:2px;margin-bottom:16px}
+.stack i{height:100%;border-radius:3px}
+.seg-yours{background:var(--st-yours)}
+.seg-waiting{background:var(--st-waiting)}
+.seg-cold{background:var(--st-cooling)}
+.seg-off{background:var(--st-unknown)}
+.stlegend{display:flex;flex-direction:column;gap:9px}
+.stleg{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--ink-2)}
+.stleg .dot{width:10px;height:10px;border-radius:3px;flex:none}
+.stleg .n{margin-left:auto;font-weight:var(--w-bold);color:var(--ink);font-variant-numeric:tabular-nums}
+
+.cmp{display:flex;flex-direction:column;gap:14px;margin-top:4px}
+.cmp-row{display:grid;grid-template-columns:88px 1fr auto;align-items:center;gap:12px}
+.cmp-label{font-size:13px;color:var(--ink-2)}
+.cmp-track{height:20px;background:var(--line-soft);border-radius:var(--r-xs)}
+.cmp-bar{height:100%;border-radius:var(--r-xs);min-width:6px}
+.cmp-bar.you{background:var(--st-yours)}
+.cmp-bar.them{background:var(--accent)}
+.cmp-n{font-size:13px;font-weight:var(--w-bold);color:var(--ink);font-variant-numeric:tabular-nums}
+.cmp-note{font-size:12.5px;color:var(--ink-3);margin-top:14px;padding-top:14px;border-top:1px solid var(--line-soft);line-height:1.5}
+.cmp-note b{color:var(--st-yours)}
+
+.imp-row{display:flex;align-items:center;gap:10px;margin:9px 0;font-size:13px;color:var(--ink-2)}
+.imp-dot{width:11px;height:11px;border-radius:50%;flex:none}
+.imp-track{height:8px;border-radius:var(--r-xs);background:var(--line-soft);flex:1}
+.imp-fill{height:100%;border-radius:var(--r-xs)}
+.imp-n{font-weight:var(--w-bold);color:var(--ink);font-variant-numeric:tabular-nums;width:16px;text-align:right}
+
+.urg{margin-top:16px}
+.urow{display:grid;grid-template-columns:14px 1fr auto auto;gap:12px;align-items:center;width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--line-soft);padding:13px 22px;cursor:pointer}
+.urow:first-child{border-top:0}
+.urow:hover{background:#FAFBFB}
+.udot{width:12px;height:12px;border-radius:50%}
+.uname{font-family:var(--font-serif);font-size:17px;font-weight:var(--w-semi);letter-spacing:-.01em}
+.utime{font-size:12.5px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+
+@media(max-width:820px){
+  .stats{grid-template-columns:1fr 1fr}
+  .qhead{display:none}
+  .qrow{grid-template-columns:1fr;gap:10px}
+  .qright{justify-content:flex-start;margin-top:6px}
+  .kpis{grid-template-columns:1fr 1fr}
+  .grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<div class="bar"><div class="bar-in">
+  <button class="logo">Hilo</button>
+  <div class="grow"></div>
+  <button class="btn btn--sm">Cola</button>
+  <button class="btn btn--sm">Configuración</button>
+</div></div>
+
+<div class="wrap-page">
+  <div class="head-row">
+    <div>
+      <h1 class="h-display">Quién te está esperando</h1>
+      <p class="h-lead">Ordenado por urgencia real: lo que le debés a alguien pesa más que cualquier otra cosa.</p>
+    </div>
+    <div class="viewswitch" id="viewSwitch">
+      <button data-view="lista" class="on">Lista</button>
+      <button data-view="panorama">Panorama</button>
+    </div>
+  </div>
+
+  <div id="viewLista">
+
+  <!-- CONTADORES = FILTROS -->
+  <div class="stats" id="stats">
+    <button class="stat stat--yours" data-filter="yours" aria-pressed="false">
+      <div class="n">5</div><div class="c">te esperan</div><span class="go">Ver ↓</span>
+    </button>
+    <button class="stat stat--new" data-filter="nuevos" aria-pressed="false">
+      <div class="n">2</div><div class="c">contactos nuevos</div><span class="go">Ver ↓</span>
+    </button>
+    <button class="stat stat--cold" data-filter="cold" aria-pressed="false">
+      <div class="n">3</div><div class="c">se están enfriando</div><span class="go">Ver ↓</span>
+    </button>
+    <button class="stat stat--unknown" data-filter="sinid" aria-pressed="false">
+      <div class="n">1</div><div class="c">sin identificar</div><span class="go">Ver ↑</span>
+    </button>
+  </div>
+
+  <!-- SIN IDENTIFICAR -->
+  <div class="card unknown-card" id="unknownCard">
+    <div class="uc-top">
+      <span class="badge badge--unknown">Sin identificar</span>
+      <span class="label" style="letter-spacing:.04em">marina.f@laespiga.com.ar</span>
+    </div>
+    <p class="uc-quote">«Hola, soy Marina, socia de Juan en La Espiga. Él me reenvió la propuesta. Antes de decidir quería saber si el precio incluye la migración de los pedidos viejos.»</p>
+    <p class="uc-why">La IA cree que es <b>Panadería La Espiga</b> con 92 % de confianza: mismo dominio de mail que Juan Rodríguez y retoma la conversación de la propuesta.</p>
+    <div class="uc-acts">
+      <button class="btn btn--primary btn--sm">Sí, es Panadería La Espiga</button>
+      <button class="btn btn--sm">Crear un alias nuevo</button>
+    </div>
+  </div>
+
+  <!-- TABLA -->
+  <div class="table-head" id="tabla">
+    <input class="search" id="search" type="text" placeholder="Buscar cliente…" aria-label="Buscar cliente">
+    <span class="th-count" id="count"><b>11</b> clientes</span>
+    <span id="fchipWrap"></span>
+    <div class="sort">
+      <span class="label">Ordenar</span>
+      <div class="seg" id="sortSeg">
+        <button data-sort="urgencia" class="on">Urgencia</button>
+        <button data-sort="importancia">Importancia</button>
+        <button data-sort="antiguedad">Sin actividad</button>
+        <button data-sort="nombre">Nombre</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="qhead">
+    <span>Cliente</span>
+    <span>Estado</span>
+  </div>
+
+  <div class="card qlist" id="qlist">
+
+    <button class="qrow" data-state="yours" data-imp="3" data-urg="98" data-hours="96" data-name="Distribuidora Kern" data-new="0" data-newcontact="0">
+      <div class="qmain"><div class="qline1"><span class="qname">Distribuidora Kern</span><span class="chip-stage">Propuesta enviada</span></div></div>
+      <div class="qright"><span class="badge badge--yours">Hay que responderle</span><span class="qtime">hace 4 días</span></div>
+    </button>
+
+    <button class="qrow" data-state="yours" data-imp="3" data-urg="92" data-hours="48" data-name="Panadería La Espiga" data-new="1" data-newcontact="0">
+      <div class="qmain"><div class="qline1"><span class="qname">Panadería La Espiga</span><span class="chip-stage">Negociación</span><span class="tag-new">Nuevo mensaje</span></div></div>
+      <div class="qright"><span class="badge badge--yours">Hay que responderle</span><span class="qtime">hace 2 días</span></div>
+    </button>
+
+    <button class="qrow" data-state="yours" data-imp="2" data-urg="78" data-hours="22" data-name="Bar Los Tilos" data-new="1" data-newcontact="0">
+      <div class="qmain"><div class="qline1"><span class="qname">Bar Los Tilos</span><span class="chip-stage">Reunión hecha</span><span class="tag-new">Nuevo mensaje</span></div></div>
+      <div class="qright"><span class="badge badge--yours">Hay que responderle</span><span class="qtime">hace 22 h</span></div>
+    </button>
+
+    <button class="qrow" data-state="yours" data-imp="2" data-urg="60" data-hours="1" data-name="Heladería Polar" data-new="1" data-newcontact="1">
+      <div class="qmain"><div class="qline1"><span class="qname">Heladería Polar</span><span class="chip-stage">Nuevo</span><span class="tag-new">Nuevo mensaje</span></div></div>
+      <div class="qright"><span class="badge badge--yours">Hay que responderle</span><span class="qtime">hace 1 h</span></div>
+    </button>
+
+    <button class="qrow" data-state="yours" data-imp="1" data-urg="55" data-hours="3" data-name="Almacén Belgrano" data-new="1" data-newcontact="1">
+      <div class="qmain"><div class="qline1"><span class="qname">Almacén Belgrano</span><span class="chip-stage">Nuevo</span><span class="tag-new">Nuevo mensaje</span></div></div>
+      <div class="qright"><span class="badge badge--yours">Hay que responderle</span><span class="qtime">hace 3 h</span></div>
+    </button>
+
+    <button class="qrow" data-state="cold" data-imp="2" data-urg="52" data-hours="312" data-name="Parrilla El Once" data-new="0" data-newcontact="0">
+      <div class="qmain"><div class="qline1"><span class="qname">Parrilla El Once</span><span class="chip-stage">Propuesta enviada</span></div></div>
+      <div class="qright"><span class="badge badge--cold">Enfriándose</span><span class="qtime">esperás hace 13 días</span></div>
+    </button>
+
+    <button class="qrow" data-state="cold" data-imp="2" data-urg="48" data-hours="240" data-name="Gimnasio Nudo" data-new="0" data-newcontact="0">
+      <div class="qmain"><div class="qline1"><span class="qname">Gimnasio Nudo</span><span class="chip-stage">Propuesta enviada</span></div></div>
+      <div class="qright"><span class="badge badge--cold">Enfriándose</span><span class="qtime">esperás hace 10 días</span></div>
+    </button>
+
+    <button class="qrow" data-state="cold" data-imp="1" data-urg="44" data-hours="192" data-name="Vinoteca Sarmiento" data-new="0" data-newcontact="0">
+      <div class="qmain"><div class="qline1"><span class="qname">Vinoteca Sarmiento</span><span class="chip-stage">Reunión hecha</span></div></div>
+      <div class="qright"><span class="badge badge--cold">Enfriándose</span><span class="qtime">esperás hace 8 días</span></div>
+    </button>
+
+    <button class="qrow" data-state="waiting" data-imp="2" data-urg="30" data-hours="24" data-name="Café Volta" data-new="0" data-newcontact="0">
+      <div class="qmain"><div class="qline1"><span class="qname">Café Volta</span><span class="chip-stage">Calificado</span></div></div>
+      <div class="qright"><span class="badge badge--waiting">Esperando respuesta</span><span class="qtime">hace 1 día</span></div>
+    </button>
+
+    <button class="qrow off" data-state="off" data-imp="2" data-urg="5" data-hours="720" data-name="Rotisería Don Alfredo" data-new="0" data-newcontact="0">
+      <div class="qmain"><div class="qline1"><span class="qname">Rotisería Don Alfredo</span><span class="chip-stage">Cerrado ganado</span></div></div>
+      <div class="qright"><span class="badge badge--off">Cerrado ganado</span></div>
+    </button>
+
+    <button class="qrow off" data-state="off" data-imp="1" data-urg="3" data-hours="1000" data-name="Sushi Nagano" data-new="0" data-newcontact="0">
+      <div class="qmain"><div class="qline1"><span class="qname">Sushi Nagano</span><span class="chip-stage">Perdido</span></div></div>
+      <div class="qright"><span class="badge badge--off">Perdido</span></div>
+    </button>
+
+  </div>
+
+  <div class="legend">
+    <span><span class="leg-bar" style="background:var(--score-alta)"></span> Importancia alta</span>
+    <span><span class="leg-bar" style="background:var(--score-media)"></span> Media</span>
+    <span><span class="leg-bar" style="background:var(--score-baja)"></span> Baja</span>
+    <span><span class="badge badge--yours" style="padding:3px 9px">Hay que responderle</span></span>
+    <span><span class="badge badge--waiting" style="padding:3px 9px">Esperando respuesta</span></span>
+    <span><span class="tag-new">Nuevo mensaje</span> sin leer</span>
+  </div>
+
+  </div><!-- /viewLista -->
+
+  <!-- VISTA PANORAMA -->
+  <div id="viewPanorama" hidden>
+
+    <div class="kpis">
+      <div class="card kpi"><span class="label">En la cola</span><div class="v num">9</div><div class="d">clientes activos ahora</div></div>
+      <div class="card kpi k-yours"><span class="label">Te toca</span><div class="v num">5</div><div class="d"><b>hay que responderles</b></div></div>
+      <div class="card kpi k-cold"><span class="label">Riesgo</span><div class="v num">3</div><div class="d">enfriándose hace +7 días</div></div>
+      <div class="card kpi k-unknown"><span class="label">Sin identificar</span><div class="v num">1</div><div class="d">mensaje sin alias</div></div>
+    </div>
+
+    <div class="grid">
+
+      <section class="card panel">
+        <h3>Dónde están en el flujo</h3>
+        <p class="psub">Cuántos clientes activos hay en cada etapa de venta.</p>
+        <div class="fun-row" title="Nuevo: 2"><span class="fun-label">Nuevo</span><div class="fun-track"><div class="fun-bar" style="width:67%"></div></div><span class="fun-n num">2</span></div>
+        <div class="fun-row" title="Calificado: 1"><span class="fun-label">Calificado</span><div class="fun-track"><div class="fun-bar" style="width:33%"></div></div><span class="fun-n num">1</span></div>
+        <div class="fun-row" title="Reunión: 2"><span class="fun-label">Reunión</span><div class="fun-track"><div class="fun-bar" style="width:67%"></div></div><span class="fun-n num">2</span></div>
+        <div class="fun-row" title="Propuesta: 3"><span class="fun-label">Propuesta</span><div class="fun-track"><div class="fun-bar" style="width:100%"></div></div><span class="fun-n num">3</span></div>
+        <div class="fun-row" title="Negociación: 1"><span class="fun-label">Negociación</span><div class="fun-track"><div class="fun-bar" style="width:33%"></div></div><span class="fun-n num">1</span></div>
+        <div class="fun-row" title="Cierre: 2"><span class="fun-label">Cierre</span><div class="fun-track"><div class="fun-bar" style="width:67%"></div></div><span class="fun-n num">2</span></div>
+      </section>
+
+      <section class="card panel">
+        <h3>De quién es la pelota</h3>
+        <p class="psub">Sobre los 9 activos + el sin identificar.</p>
+        <div class="stack" role="img" aria-label="Hay que responderle 5, esperando 1, enfriándose 3, cerrados 2">
+          <i class="seg-yours" style="flex:5" title="Hay que responderle: 5"></i>
+          <i class="seg-waiting" style="flex:1" title="Esperando respuesta: 1"></i>
+          <i class="seg-cold" style="flex:3" title="Enfriándose: 3"></i>
+          <i class="seg-off" style="flex:2" title="Cerrados: 2"></i>
+        </div>
+        <div class="stlegend">
+          <div class="stleg"><span class="dot seg-yours"></span> Hay que responderle <span class="n num">5</span></div>
+          <div class="stleg"><span class="dot seg-waiting"></span> Esperando respuesta <span class="n num">1</span></div>
+          <div class="stleg"><span class="dot seg-cold"></span> Enfriándose <span class="n num">3</span></div>
+          <div class="stleg"><span class="dot seg-off"></span> Cerrados (ganado / perdido) <span class="n num">2</span></div>
+        </div>
+      </section>
+
+      <section class="card panel">
+        <h3>Ritmo de respuesta</h3>
+        <p class="psub">Cuánto tardás vos vs. cuánto tardan tus clientes.</p>
+        <div class="cmp">
+          <div class="cmp-row" title="Tu demora promedio: 34 h"><span class="cmp-label">Vos</span><div class="cmp-track"><div class="cmp-bar you" style="width:100%"></div></div><span class="cmp-n num">34 h</span></div>
+          <div class="cmp-row" title="Demora de tus clientes: 5 h"><span class="cmp-label">Tus clientes</span><div class="cmp-track"><div class="cmp-bar them" style="width:15%"></div></div><span class="cmp-n num">5 h</span></div>
+        </div>
+        <p class="cmp-note">Los estás haciendo esperar <b>casi 7× más</b> de lo que ellos tardan en contestarte. Ahí se pierden ventas.</p>
+      </section>
+
+      <section class="card panel">
+        <h3>Por importancia</h3>
+        <p class="psub">Cómo scoreaste tu cartera activa.</p>
+        <div class="imp-row"><span class="imp-dot" style="background:var(--score-alta)"></span> Alta <div class="imp-track"><div class="imp-fill" style="width:33%;background:var(--score-alta)"></div></div><span class="imp-n num">2</span></div>
+        <div class="imp-row"><span class="imp-dot" style="background:var(--score-media)"></span> Media <div class="imp-track"><div class="imp-fill" style="width:83%;background:var(--score-media)"></div></div><span class="imp-n num">5</span></div>
+        <div class="imp-row"><span class="imp-dot" style="background:var(--score-baja)"></span> Baja <div class="imp-track"><div class="imp-fill" style="width:33%;background:var(--score-baja)"></div></div><span class="imp-n num">2</span></div>
+        <p class="cmp-note" style="border-top:1px solid var(--line-soft);margin-top:16px">De los <b style="color:var(--ink)">2 de alta importancia</b>, a los dos hay que responderles. Son la prioridad del día.</p>
+      </section>
+
+    </div>
+
+    <section class="card urg">
+      <div style="padding:16px 22px 4px"><h3 style="font-family:var(--font-serif);font-size:19px;font-weight:var(--w-medium)">Los más urgentes ahora</h3><p class="psub" style="margin-bottom:2px">Los que más te están esperando. Tocá para abrir la ficha.</p></div>
+      <button class="urow">
+        <span class="udot" style="background:var(--score-alta)" title="Importancia alta"></span>
+        <span class="uname">Distribuidora Kern</span>
+        <span class="badge badge--yours">Hay que responderle</span>
+        <span class="utime">hace 4 días</span>
+      </button>
+      <button class="urow">
+        <span class="udot" style="background:var(--score-alta)" title="Importancia alta"></span>
+        <span class="uname">Panadería La Espiga</span>
+        <span class="badge badge--yours">Hay que responderle</span>
+        <span class="utime">hace 2 días</span>
+      </button>
+      <button class="urow">
+        <span class="udot" style="background:var(--score-media)" title="Importancia media"></span>
+        <span class="uname">Bar Los Tilos</span>
+        <span class="badge badge--yours">Hay que responderle</span>
+        <span class="utime">hace 22 h</span>
+      </button>
+    </section>
+
+  </div><!-- /viewPanorama -->
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+  function $(id){ return document.getElementById(id); }
+  var list = $("qlist");
+  var rows = Array.prototype.slice.call(list.querySelectorAll(".qrow"));
+  var stats = Array.prototype.slice.call(document.querySelectorAll("#stats .stat"));
+  var filter = null;
+  var sortKey = "urgencia";
+  var searchTerm = "";
+
+  var FILTER_LABEL = { yours:"te esperan", nuevos:"contactos nuevos", cold:"se están enfriando" };
+  function matches(r, f){
+    if (f === "yours")  return r.getAttribute("data-state") === "yours";
+    if (f === "nuevos") return r.getAttribute("data-newcontact") === "1";
+    if (f === "cold")   return r.getAttribute("data-state") === "cold";
+    return true;
+  }
+  var num = function(r,a){ return parseInt(r.getAttribute(a),10); };
+  var sorters = {
+    urgencia:    function(a,b){ return num(b,"data-urg") - num(a,"data-urg"); },
+    importancia: function(a,b){ return (num(b,"data-imp")-num(a,"data-imp")) || (num(b,"data-urg")-num(a,"data-urg")); },
+    antiguedad:  function(a,b){ return num(b,"data-hours") - num(a,"data-hours"); },
+    nombre:      function(a,b){ return a.getAttribute("data-name").localeCompare(b.getAttribute("data-name"),"es"); }
+  };
+
+  function render(){
+    // ordenar
+    rows.slice().sort(sorters[sortKey]).forEach(function(r){ list.appendChild(r); });
+    // filtrar
+    var visible = 0;
+    rows.forEach(function(r){
+      var okFilter = !filter || matches(r, filter);
+      var okSearch = !searchTerm || r.getAttribute("data-name").toLowerCase().indexOf(searchTerm) >= 0;
+      var show = okFilter && okSearch;
+      r.style.display = show ? "" : "none";
+      if (show) visible++;
+    });
+    // contador + chip
+    var lbl = filter ? FILTER_LABEL[filter] : (searchTerm ? (visible === 1 ? "resultado" : "resultados") : (visible === 1 ? "cliente" : "clientes"));
+    $("count").innerHTML = "<b>" + visible + "</b> " + lbl;
+    var wrap = $("fchipWrap");
+    if (filter){
+      wrap.innerHTML = '<span class="fchip">Filtrado: ' + FILTER_LABEL[filter] + ' <button aria-label="Quitar filtro">✕</button></span>';
+      wrap.querySelector("button").addEventListener("click", function(){ setFilter(null); });
+    } else { wrap.innerHTML = ""; }
+    // estado de las tarjetas contador
+    stats.forEach(function(s){
+      var f = s.getAttribute("data-filter");
+      s.setAttribute("aria-pressed", (f === filter) ? "true" : "false");
+    });
+  }
+
+  function setFilter(f){ filter = f; render(); }
+
+  // Contadores → filtran (o, sin identificar, van a la tarjeta)
+  stats.forEach(function(s){
+    s.addEventListener("click", function(){
+      var f = s.getAttribute("data-filter");
+      if (f === "sinid"){
+        var card = $("unknownCard");
+        card.scrollIntoView({ behavior:"smooth", block:"center" });
+        card.classList.remove("pulse"); void card.offsetWidth; card.classList.add("pulse");
+        return;
+      }
+      setFilter(filter === f ? null : f);
+      $("tabla").scrollIntoView({ behavior:"smooth", block:"start" });
+    });
+  });
+
+  // Ordenar
+  Array.prototype.forEach.call(document.querySelectorAll("#sortSeg button"), function(b){
+    b.addEventListener("click", function(){
+      Array.prototype.forEach.call(document.querySelectorAll("#sortSeg button"), function(x){ x.classList.remove("on"); });
+      b.classList.add("on");
+      sortKey = b.getAttribute("data-sort");
+      render();
+    });
+  });
+
+  // Buscador
+  $("search").addEventListener("input", function(){ searchTerm = this.value.trim().toLowerCase(); render(); });
+
+  // Switch Lista / Panorama
+  var vLista = $("viewLista"), vPan = $("viewPanorama");
+  Array.prototype.forEach.call(document.querySelectorAll("#viewSwitch button"), function(b){
+    b.addEventListener("click", function(){
+      Array.prototype.forEach.call(document.querySelectorAll("#viewSwitch button"), function(x){ x.classList.remove("on"); });
+      b.classList.add("on");
+      var v = b.getAttribute("data-view");
+      vLista.hidden = (v !== "lista");
+      vPan.hidden = (v !== "panorama");
+    });
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,2 @@
+# Solo hace falta en un hosting con Postgres. En tu compu no lo instales.
+psycopg[binary]>=3.2

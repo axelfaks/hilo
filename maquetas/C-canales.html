@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hilo — Opción C · Canales</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&display=swap">
+<style>
+:root{
+  --bg:#FFFFFF; --side:#F3F5F8; --side-2:#EAEDF2; --line:#E3E7EE; --line-2:#EEF1F5;
+  --ink:#131820; --ink-2:#596373; --ink-3:#8A93A3;
+  --slate:#1C2431;
+  --mail:#C2810E; --mail-bg:#FDF4E2; --mail-line:#F0DCB2;
+  --wa:#128C4A; --wa-bg:#E8F6EE; --wa-line:#BFE4CE;
+  --ig:#B3316B; --ig-bg:#FCEBF2; --ig-line:#F3C9DB;
+  --tg:#1A78AD; --tg-bg:#E7F3FA; --tg-line:#BEDDEE;
+  --call:#5B4BA6; --call-bg:#EFEDFA; --call-line:#D3CDEE;
+  --alert:#C0392B; --alert-bg:#FCEBE8;
+  --sans:"Figtree",ui-sans-serif,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14.5px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.badge-opt{position:fixed;left:14px;bottom:14px;z-index:60;font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);background:#fff;border:1px solid var(--line);border-radius:999px;padding:6px 13px;box-shadow:0 3px 12px rgba(19,24,32,.08)}
+.lbl{font-size:10.5px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3)}
+.app{display:grid;grid-template-columns:274px minmax(0,1fr) 318px;height:100vh}
+.pane{min-height:0;display:flex;flex-direction:column}
+
+/* -------- sidebar -------- */
+.side{background:var(--side);border-right:1px solid var(--line)}
+.side-top{padding:16px 16px 12px}
+.brand{display:flex;align-items:center;gap:9px}
+.mark{width:26px;height:26px;border-radius:8px;background:var(--slate);display:grid;place-items:center}
+.mark i{display:block;width:11px;height:2px;background:#fff;border-radius:2px;box-shadow:0 4px 0 #7FD1A6,0 -4px 0 #E8A33D}
+.brand b{font-size:17px;font-weight:800;letter-spacing:-.02em}
+.stats{display:flex;gap:5px;margin-top:13px}
+.stat{flex:1;background:#fff;border:1px solid var(--line);border-radius:8px;padding:7px 8px}
+.stat b{display:block;font-size:17px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.stat span{font-size:10.5px;color:var(--ink-3);font-weight:500;line-height:1.25;display:block}
+.stat.hot b{color:var(--alert)}
+.list{overflow-y:auto;padding:6px 8px 14px;flex:1}
+.li{width:100%;text-align:left;border:1px solid transparent;background:none;border-radius:10px;padding:10px 11px;cursor:pointer;font:inherit;color:inherit;display:block}
+.li:hover{background:var(--side-2)}
+.li.on{background:#fff;border-color:var(--line);box-shadow:0 1px 3px rgba(19,24,32,.05)}
+.li:focus-visible{outline:2px solid var(--slate);outline-offset:1px}
+.li-top{display:flex;align-items:center;gap:8px}
+.ava{width:30px;height:30px;border-radius:9px;background:var(--side-2);display:grid;place-items:center;font-size:11.5px;font-weight:700;color:var(--ink-2);flex:none}
+.li.on .ava{background:var(--slate);color:#fff}
+.li-name{font-size:13.5px;font-weight:700;letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.li-time{margin-left:auto;font-size:11px;color:var(--ink-3);font-variant-numeric:tabular-nums;flex:none}
+.li-msg{font-size:12.5px;color:var(--ink-3);margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.li-foot{display:flex;align-items:center;gap:6px;margin-top:7px}
+.state{font-size:10.5px;font-weight:700;border-radius:5px;padding:2px 7px}
+.s-me{background:var(--alert-bg);color:var(--alert)}
+.s-them{background:var(--wa-bg);color:var(--wa)}
+.s-cold{background:var(--mail-bg);color:var(--mail)}
+.s-new{background:var(--call-bg);color:var(--call)}
+.dots{display:flex;gap:3px;margin-left:auto}
+.d{width:6px;height:6px;border-radius:50%}
+
+/* -------- chat -------- */
+.chead{padding:13px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;background:#fff}
+.chead h1{font-size:17.5px;font-weight:800;letter-spacing:-.02em}
+.chip{font-size:11.5px;font-weight:600;border-radius:999px;padding:3px 10px;background:var(--side);color:var(--ink-2);border:1px solid var(--line)}
+.chip.now{background:var(--slate);color:#fff;border-color:var(--slate)}
+.alert{margin:14px 20px 0;background:var(--alert-bg);border:1px solid #F2CFC9;border-radius:11px;padding:12px 15px;display:flex;gap:12px;align-items:center}
+.alert .ic{width:26px;height:26px;border-radius:50%;background:var(--alert);color:#fff;display:grid;place-items:center;font-weight:800;font-size:14px;flex:none}
+.alert b{display:block;font-size:14.5px;font-weight:700;letter-spacing:-.01em}
+.alert span{font-size:12.5px;color:#8A5049}
+.alert .go{margin-left:auto;font-size:12.5px;font-weight:700;color:var(--alert);background:#fff;border:1px solid #F2CFC9;border-radius:7px;padding:7px 12px;cursor:pointer;flex:none}
+.stream{flex:1;overflow-y:auto;padding:16px 20px 8px;display:flex;flex-direction:column;gap:14px}
+.day{align-self:center;font-size:11px;font-weight:700;color:var(--ink-3);background:var(--side);border-radius:999px;padding:4px 12px}
+.msg{max-width:min(560px,78%);display:flex;flex-direction:column;gap:5px}
+.msg.them{align-self:flex-start}
+.msg.us{align-self:flex-end;align-items:flex-end}
+.mhead{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase}
+.mtime{color:var(--ink-3);font-weight:600;letter-spacing:0;text-transform:none;font-variant-numeric:tabular-nums}
+.bub{border-radius:14px;padding:11px 14px;font-size:14.5px;line-height:1.6;border:1px solid}
+.msg.them .bub{border-bottom-left-radius:5px}
+.msg.us .bub{border-bottom-right-radius:5px;background:var(--slate);border-color:var(--slate);color:#F2F5F9}
+.b-mail{background:var(--mail-bg);border-color:var(--mail-line)}
+.b-wa{background:var(--wa-bg);border-color:var(--wa-line)}
+.b-ig{background:var(--ig-bg);border-color:var(--ig-line)}
+.b-call{background:var(--call-bg);border-color:var(--call-line)}
+.att{display:flex;gap:7px;margin-top:9px;flex-wrap:wrap}
+.attb{font-size:11.5px;font-weight:600;color:var(--ink-2);background:rgba(255,255,255,.75);border:1px solid rgba(19,24,32,.09);border-radius:7px;padding:4px 9px}
+.sys{align-self:center;font-size:12px;color:var(--ink-3);display:flex;align-items:center;gap:7px;font-weight:500}
+.sys::before,.sys::after{content:"";width:26px;height:1px;background:var(--line)}
+.tag-ai{font-size:10px;font-weight:800;letter-spacing:.06em;color:var(--call);background:var(--call-bg);border-radius:4px;padding:2px 6px}
+.unseen{box-shadow:0 0 0 3px rgba(192,57,43,.1)}
+
+/* composer */
+.comp{border-top:1px solid var(--line);background:#fff;padding:11px 20px 14px}
+.tabs{display:flex;gap:5px;margin-bottom:9px;flex-wrap:wrap}
+.tab{font-size:12px;font-weight:700;border-radius:999px;padding:5px 12px;border:1px solid var(--line);background:#fff;color:var(--ink-3);cursor:pointer;display:flex;align-items:center;gap:6px}
+.tab:hover{border-color:var(--ink-3)}
+.tab:focus-visible{outline:2px solid var(--slate);outline-offset:2px}
+.tab.sel{background:var(--mail-bg);border-color:var(--mail-line);color:var(--mail)}
+.tab .d{width:7px;height:7px}
+.box{border:1px solid var(--line);border-radius:12px;padding:11px 13px;background:#FCFDFE}
+.box p{font-size:14.5px;color:var(--ink-2);line-height:1.6}
+.box p b{color:var(--ink)}
+.crow{display:flex;align-items:center;gap:8px;margin-top:11px}
+.icobtn{width:32px;height:32px;border-radius:9px;border:1px solid var(--line);background:#fff;display:grid;place-items:center;cursor:pointer;color:var(--ink-2)}
+.icobtn:hover{border-color:var(--ink-3)}
+.icobtn:focus-visible{outline:2px solid var(--slate);outline-offset:2px}
+.hint{font-size:11.5px;color:var(--ink-3)}
+.send{margin-left:auto;font-size:13px;font-weight:700;color:#fff;background:var(--slate);border:0;border-radius:9px;padding:9px 16px;cursor:pointer}
+.send:hover{background:#2A3444}
+.ghost{font-size:13px;font-weight:700;color:var(--ink-2);background:#fff;border:1px solid var(--line);border-radius:9px;padding:9px 14px;cursor:pointer}
+
+/* -------- copilot -------- */
+.cop{background:var(--side);border-left:1px solid var(--line);overflow-y:auto}
+.cop-in{padding:15px 15px 26px;display:flex;flex-direction:column;gap:11px}
+.ctop{display:flex;align-items:center;gap:8px}
+.cdot-ai{width:8px;height:8px;border-radius:50%;background:var(--call);box-shadow:0 0 0 3px var(--call-bg)}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 15px}
+.card h3{font-size:10.5px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3);margin-bottom:9px}
+.card p{font-size:13.5px;color:var(--ink-2);line-height:1.58}
+.big{font-size:15.5px;font-weight:700;letter-spacing:-.015em;color:var(--ink);line-height:1.35;text-wrap:balance}
+.mini{display:flex;flex-direction:column;gap:8px}
+.mini div{display:grid;grid-template-columns:16px 1fr;gap:8px;font-size:13.5px;color:var(--ink-2);line-height:1.5}
+.mini div::before{content:"–";color:var(--ink-3)}
+.cm{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;padding-top:10px;margin-top:10px;border-top:1px solid var(--line-2)}
+.cm:first-of-type{border-top:0;margin-top:0;padding-top:0}
+.cmi{width:19px;height:19px;border-radius:6px;display:grid;place-items:center;font-size:11px;font-weight:800}
+.cmi.late{background:var(--alert-bg);color:var(--alert)}
+.cmi.wait{background:var(--wa-bg);color:var(--wa)}
+.cm b{display:block;font-size:13.5px;font-weight:700}
+.cm small{font-size:11.5px;color:var(--ink-3)}
+.slider{margin-top:11px}
+.track{display:flex;gap:3px}
+.tk{flex:1;height:7px;border-radius:4px;background:var(--side-2)}
+.tk.on{background:var(--call)}
+.tk.cur{background:var(--call);box-shadow:0 0 0 3px var(--call-bg)}
+.slabel{display:flex;justify-content:space-between;font-size:11px;color:var(--ink-3);font-weight:600;margin-top:7px}
+.now{font-size:13.5px;font-weight:700;color:var(--call);margin-top:9px}
+.guard{font-size:12px;color:var(--ink-3);line-height:1.55;margin-top:8px}
+</style>
+</head>
+<body>
+<div class="badge-opt">Opción C · Canales</div>
+
+<div class="app">
+  <!-- sidebar -->
+  <aside class="pane side">
+    <div class="side-top">
+      <div class="brand"><span class="mark"><i></i></span><b>Hilo</b></div>
+      <div class="stats">
+        <div class="stat hot"><b>4</b><span>te esperan</span></div>
+        <div class="stat"><b>3</b><span>se enfrían</span></div>
+        <div class="stat"><b>1</b><span>sin alias</span></div>
+      </div>
+    </div>
+    <div class="list">
+      <button class="li on">
+        <div class="li-top"><span class="ava">LE</span><span class="li-name">Panadería La Espiga</span><span class="li-time">2 d</span></div>
+        <div class="li-msg">«Quedamos en que me mandabas el número…»</div>
+        <div class="li-foot"><span class="state s-me">La pelota es tuya</span>
+          <span class="dots"><i class="d" style="background:var(--mail)"></i><i class="d" style="background:var(--wa)"></i><i class="d" style="background:var(--ig)"></i><i class="d" style="background:var(--call)"></i></span></div>
+      </button>
+      <button class="li">
+        <div class="li-top"><span class="ava">DK</span><span class="li-name">Distribuidora Kern</span><span class="li-time">5 d</span></div>
+        <div class="li-msg">«Necesitamos el contrato para cerrar el mes»</div>
+        <div class="li-foot"><span class="state s-me">Compromiso vencido</span>
+          <span class="dots"><i class="d" style="background:var(--mail)"></i><i class="d" style="background:var(--tg)"></i></span></div>
+      </button>
+      <button class="li">
+        <div class="li-top"><span class="ava">?</span><span class="li-name">marina.f@laespiga…</span><span class="li-time">3 h</span></div>
+        <div class="li-msg">Sin alias · se parece a La Espiga</div>
+        <div class="li-foot"><span class="state s-new">Identificar · 92 %</span>
+          <span class="dots"><i class="d" style="background:var(--mail)"></i></span></div>
+      </button>
+      <button class="li">
+        <div class="li-top"><span class="ava">GN</span><span class="li-name">Gimnasio Nudo</span><span class="li-time">11 d</span></div>
+        <div class="li-msg">Sin movimiento desde la propuesta</div>
+        <div class="li-foot"><span class="state s-cold">Enfriándose</span>
+          <span class="dots"><i class="d" style="background:var(--wa)"></i><i class="d" style="background:var(--call)"></i></span></div>
+      </button>
+      <button class="li">
+        <div class="li-top"><span class="ava">CV</span><span class="li-name">Café Volta</span><span class="li-time">1 d</span></div>
+        <div class="li-msg">La IA respondió sola · esperando a Lucía</div>
+        <div class="li-foot"><span class="state s-them">Esperás respuesta</span>
+          <span class="dots"><i class="d" style="background:var(--ig)"></i><i class="d" style="background:var(--mail)"></i></span></div>
+      </button>
+    </div>
+  </aside>
+
+  <!-- chat -->
+  <main class="pane">
+    <div class="chead">
+      <h1>Panadería La Espiga</h1>
+      <span class="chip now">Negociación</span>
+      <span class="chip">Juan Rodríguez · 24 días</span>
+      <span class="chip">4 canales</span>
+    </div>
+
+    <div class="alert">
+      <span class="ic">!</span>
+      <div><b>Le debés el precio revisado hace 2 días</b><span>Marina viaja el viernes: quieren definirlo antes.</span></div>
+      <button class="go">Ver el borrador</button>
+    </div>
+
+    <div class="stream">
+      <span class="day">28 de julio</span>
+      <div class="msg them">
+        <div class="mhead" style="color:var(--ig)">Instagram <span class="mtime">19:55</span></div>
+        <div class="bub b-ig">Hola! Vi que hacen sistemas de pedidos para panaderías. Cuánto sale?</div>
+      </div>
+
+      <span class="day">2 de agosto</span>
+      <div class="msg them">
+        <div class="mhead" style="color:var(--call)">Llamada · 22 min <span class="tag-ai">audio transcripto</span><span class="mtime">16:40</span></div>
+        <div class="bub b-call">Tiene tres sucursales. Hoy toman los pedidos por WhatsApp a mano y los pasan a un cuaderno. Lo que más le duele es perder pedidos los sábados a la mañana. La decisión la toma con su socia Marina.
+          <div class="att"><span class="attb">audio-2ago.m4a · 22:14</span><span class="attb">foto-cuaderno.jpg</span></div>
+        </div>
+      </div>
+
+      <span class="day">5 de agosto</span>
+      <div class="msg us">
+        <div class="mhead" style="color:var(--ink-3)">Axel · Mail <span class="mtime">10:12</span></div>
+        <div class="bub">Te paso la propuesta para las tres sucursales, con el módulo de pedidos y la migración incluida.
+          <div class="att"><span class="attb" style="color:#D8DEE7;background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.18)">propuesta-laespiga-v1.pdf</span></div>
+        </div>
+      </div>
+
+      <span class="day">12 de agosto</span>
+      <div class="msg them">
+        <div class="mhead" style="color:var(--wa)">WhatsApp <span class="mtime">21:07</span></div>
+        <div class="bub b-wa">Lo vimos con Marina. Nos cierra la propuesta pero el precio nos queda justo para arrancar con las tres juntas.</div>
+      </div>
+      <div class="msg us">
+        <div class="mhead" style="color:var(--ink-3)">Hilo · WhatsApp <span class="tag-ai">IA · aprobado</span><span class="mtime">14 ago 09:02</span></div>
+        <div class="bub">Juan, buenísimo que les cierre. Déjenme revisar los números y te acerco una alternativa para arrancar sin resignar sucursales. Te escribo el lunes.</div>
+      </div>
+      <div class="sys">La IA movió el estado a Negociación</div>
+
+      <span class="day">20 de agosto · hace 2 días</span>
+      <div class="msg them">
+        <div class="mhead" style="color:var(--mail)">Mail · sin responder <span class="mtime">08:31</span></div>
+        <div class="bub b-mail unseen">Buen día Axel. Quedamos en que me mandabas el número nuevo y todavía no me llegó. Seguimos interesados pero necesitamos definirlo esta semana, porque Marina se va de viaje el viernes.</div>
+      </div>
+    </div>
+
+    <div class="comp">
+      <div class="tabs">
+        <button class="tab sel"><i class="d" style="background:var(--mail)"></i>Mail</button>
+        <button class="tab"><i class="d" style="background:var(--wa)"></i>WhatsApp</button>
+        <button class="tab"><i class="d" style="background:var(--ig)"></i>Instagram</button>
+        <button class="tab"><i class="d" style="background:var(--tg)"></i>Telegram</button>
+        <button class="tab"><i class="d" style="background:var(--call)"></i>Registrar una llamada</button>
+      </div>
+      <div class="box">
+        <p><b>Borrador de la IA.</b> Juan, tenés razón, me colgué con el número y te pido disculpas. Va el revisado: 15 % abajo por tomar las tres sucursales juntas, con la migración incluida. ¿Lo vemos 15 minutos mañana con Marina antes de que viaje?</p>
+        <div class="crow">
+          <button class="icobtn" aria-label="Adjuntar archivo"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.5 12.5 21a5 5 0 0 1-7-7l9-9a3.5 3.5 0 0 1 5 5l-9 9a2 2 0 0 1-3-3l8-8"/></svg></button>
+          <button class="icobtn" aria-label="Grabar audio"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4"/></svg></button>
+          <span class="hint">Dictá y se transcribe solo</span>
+          <button class="ghost">Editar</button>
+          <button class="send">Aprobar y enviar</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- copilot -->
+  <aside class="pane cop">
+    <div class="cop-in">
+      <div class="ctop"><span class="cdot-ai"></span><span class="lbl">Resumen de la IA · hace 2 min</span></div>
+
+      <div class="card">
+        <h3>Quién es</h3>
+        <p class="big">Juan Rodríguez, dueño de tres panaderías en Villa Urquiza.</p>
+        <p style="margin-top:7px">Hoy toma pedidos por WhatsApp a mano y pierde ventas los sábados. Decide junto a su socia Marina.</p>
+      </div>
+
+      <div class="card">
+        <h3>Lo último que se habló</h3>
+        <div class="mini">
+          <div>La propuesta les cierra; el freno es el precio de arrancar con las tres sucursales.</div>
+          <div>Le prometiste una alternativa el lunes 14 y no salió.</div>
+          <div>Fecha dura nueva: Marina viaja el viernes 22.</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Compromisos abiertos</h3>
+        <div class="cm"><span class="cmi late">!</span><div><b>Enviar el presupuesto revisado</b><small>Vos · vencía el 18 ago · 4 días tarde</small></div></div>
+        <div class="cm"><span class="cmi wait">⟳</span><div><b>Confirmar con Marina</b><small>Juan · antes del viernes</small></div></div>
+      </div>
+
+      <div class="card">
+        <h3>Ritmo del contacto</h3>
+        <p><b style="color:var(--ink);font-size:15px">51 h</b> de silencio de tu lado. Juan suele contestar en 3 h: está muy fuera de su ritmo.</p>
+      </div>
+
+      <div class="card">
+        <h3>Autonomía para Juan</h3>
+        <div class="slider">
+          <div class="track"><span class="tk on"></span><span class="tk on"></span><span class="tk on"></span><span class="tk cur"></span><span class="tk"></span><span class="tk"></span></div>
+          <div class="slabel"><span>Silencio</span><span>Autónoma</span></div>
+          <p class="now">Nivel 3 · pide permiso antes de enviar</p>
+          <p class="guard">No ofrece más de 15 % de descuento. Escala si nombran un competidor. No escribe fuera de 8 a 20 h.</p>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+</body>
+</html>

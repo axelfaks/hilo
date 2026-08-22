@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hilo — Opción A · Consola</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;450;500;600;700&display=swap">
+<style>
+:root{
+  --ground:#0C1015; --panel:#131922; --panel-2:#171E28; --line:#232C39; --line-soft:#1B2330;
+  --ink:#E4EAF2; --ink-2:#95A2B4; --ink-3:#5E6B7D;
+  --amber:#F0A93B; --amber-soft:rgba(240,169,59,.13);
+  --green:#41B883; --green-soft:rgba(65,184,131,.13);
+  --red:#E2574C; --red-soft:rgba(226,87,76,.13);
+  --violet:#8C7BE0;
+  --ch-mail:#F0A93B; --ch-wa:#3FAE6D; --ch-ig:#D6427F; --ch-tg:#3AA0DC; --ch-call:#8C7BE0;
+  --sans:"IBM Plex Sans",ui-sans-serif,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.badge-opt{position:fixed;left:14px;bottom:14px;z-index:50;font-family:var(--mono);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:6px 12px}
+.mono{font-family:var(--mono)}
+.lbl{font-family:var(--mono);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3)}
+
+/* ---- top bar ---- */
+.top{display:flex;align-items:center;gap:22px;height:52px;padding:0 18px;border-bottom:1px solid var(--line);background:var(--panel)}
+.brand{font-family:var(--mono);font-weight:600;letter-spacing:.22em;font-size:13px;color:var(--ink)}
+.brand span{color:var(--amber)}
+.counters{display:flex;gap:6px;margin-left:auto;align-items:center}
+.counter{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink-2);background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:5px 10px}
+.counter b{font-family:var(--mono);color:var(--ink);font-weight:600}
+.dot{width:6px;height:6px;border-radius:50%}
+.who{display:flex;align-items:center;gap:8px;padding-left:16px;border-left:1px solid var(--line);margin-left:8px;color:var(--ink-2);font-size:12.5px}
+.av{width:26px;height:26px;border-radius:50%;background:linear-gradient(150deg,#2C3745,#1B2330);border:1px solid var(--line);display:grid;place-items:center;font-family:var(--mono);font-size:10.5px;color:var(--ink-2)}
+
+/* ---- shell ---- */
+.shell{display:grid;grid-template-columns:264px minmax(0,1fr) 348px;height:calc(100vh - 52px)}
+.col{min-height:0;overflow-y:auto}
+.col-queue{border-right:1px solid var(--line);background:var(--panel)}
+.col-ai{border-left:1px solid var(--line);background:var(--panel)}
+.sec-head{display:flex;align-items:center;justify-content:space-between;padding:13px 14px 9px;position:sticky;top:0;background:var(--panel);z-index:2}
+
+/* ---- queue ---- */
+.qitem{display:block;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line-soft);padding:11px 14px;cursor:pointer;color:inherit;font:inherit;border-left:2px solid transparent}
+.qitem:hover{background:var(--panel-2)}
+.qitem.is-active{background:var(--panel-2);border-left-color:var(--amber)}
+.qitem:focus-visible{outline:2px solid var(--amber);outline-offset:-2px}
+.qtop{display:flex;align-items:baseline;gap:8px}
+.qname{font-weight:600;font-size:13.5px;letter-spacing:-.01em}
+.qage{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.qmsg{font-size:12px;color:var(--ink-3);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qball{display:inline-flex;align-items:center;gap:5px;margin-top:7px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:2.5px 7px;border-radius:4px}
+.ball-me{background:var(--red-soft);color:#F08A80}
+.ball-them{background:var(--green-soft);color:#5FCE9A}
+.ball-cold{background:var(--amber-soft);color:var(--amber)}
+.ball-new{background:rgba(140,123,224,.14);color:#A79AEA}
+.qchans{display:flex;gap:4px;margin-top:7px}
+.chdot{width:5px;height:5px;border-radius:50%}
+
+/* ---- thread ---- */
+.thead{padding:15px 22px;border-bottom:1px solid var(--line);background:var(--panel-2)}
+.trow{display:flex;align-items:center;gap:12px}
+.tname{font-size:19px;font-weight:700;letter-spacing:-.02em}
+.pill{font-family:var(--mono);font-size:10px;letter-spacing:.09em;text-transform:uppercase;padding:3.5px 9px;border-radius:999px;border:1px solid var(--line);color:var(--ink-2)}
+.pill-state{background:var(--amber-soft);border-color:rgba(240,169,59,.35);color:var(--amber)}
+.tids{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.idchip{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--ink-2);background:var(--ground);border:1px solid var(--line);border-radius:5px;padding:3.5px 8px}
+.tbody{padding:18px 22px 26px;display:flex;flex-direction:column;gap:2px}
+.daysep{display:flex;align-items:center;gap:11px;margin:16px 0 10px}
+.daysep::before,.daysep::after{content:"";height:1px;background:var(--line-soft);flex:1}
+.ev{display:grid;grid-template-columns:82px minmax(0,1fr);gap:14px;padding:9px 0}
+.evmeta{text-align:right;padding-top:2px}
+.evtime{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);font-variant-numeric:tabular-nums;display:block}
+.evchan{font-family:var(--mono);font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;display:inline-block;margin-top:4px}
+.bub{border:1px solid var(--line);border-radius:8px;padding:11px 14px;background:var(--panel);border-left-width:2px;max-width:660px}
+.bub p{font-size:13.5px;color:var(--ink);line-height:1.62}
+.bub p + p{margin-top:8px}
+.bubfrom{font-size:11px;color:var(--ink-3);margin-bottom:6px;display:flex;gap:8px;align-items:center}
+.out{background:var(--panel-2)}
+.sys{grid-column:2;font-size:11.5px;color:var(--ink-3);font-family:var(--mono);display:flex;align-items:center;gap:8px;padding:2px 0 6px}
+.tag-ai{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--violet);border:1px solid rgba(140,123,224,.35);background:rgba(140,123,224,.1);border-radius:4px;padding:1.5px 6px}
+.att{display:flex;gap:8px;margin-top:9px}
+.attbox{display:flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:6px;padding:6px 9px;font-family:var(--mono);font-size:10.5px;color:var(--ink-2);background:var(--ground)}
+.unread{border-left-color:var(--red)!important}
+
+/* ---- ai panel ---- */
+.aisec{padding:14px;border-bottom:1px solid var(--line-soft)}
+.ball-hero{border-radius:9px;padding:13px 14px;background:var(--red-soft);border:1px solid rgba(226,87,76,.32)}
+.ball-hero .lbl{color:#F08A80}
+.ball-hero .big{font-size:16.5px;font-weight:700;letter-spacing:-.02em;margin-top:5px;color:#FFD9D5;text-wrap:balance}
+.ball-hero .sub{font-size:12px;color:#C99A95;margin-top:5px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:7px 12px;margin-top:10px}
+.kv dt{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);padding-top:2px}
+.kv dd{font-size:12.5px;color:var(--ink)}
+.bul{list-style:none;display:flex;flex-direction:column;gap:8px;margin-top:9px}
+.bul li{display:grid;grid-template-columns:14px 1fr;gap:8px;font-size:12.5px;color:var(--ink-2);line-height:1.5}
+.bul li::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--ink-3);margin-top:7px}
+.cmt{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;padding:9px 10px;border:1px solid var(--line);border-radius:7px;background:var(--ground);margin-top:8px}
+.cmt-ico{width:18px;height:18px;border-radius:4px;display:grid;place-items:center;font-family:var(--mono);font-size:10px;font-weight:600}
+.cmt-late{background:var(--red-soft);color:#F08A80}
+.cmt-wait{background:var(--green-soft);color:#5FCE9A}
+.cmt b{display:block;font-size:12.5px;font-weight:500;color:var(--ink)}
+.cmt small{font-family:var(--mono);font-size:10.5px;color:var(--ink-3)}
+.temp{height:5px;border-radius:3px;background:var(--line);overflow:hidden;margin-top:8px}
+.temp i{display:block;height:100%;width:78%;background:linear-gradient(90deg,var(--green),var(--amber),var(--red))}
+.draft{border:1px solid rgba(140,123,224,.3);background:rgba(140,123,224,.06);border-radius:8px;padding:12px}
+.draft p{font-size:12.5px;line-height:1.65;color:var(--ink)}
+.dactions{display:flex;gap:7px;margin-top:11px}
+.btn{font-family:var(--sans);font-size:12px;font-weight:500;border-radius:6px;padding:7px 12px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);cursor:pointer}
+.btn:hover{border-color:var(--ink-3)}
+.btn:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+.btn-primary{background:var(--amber);border-color:var(--amber);color:#231703;font-weight:600}
+.btn-primary:hover{background:#F5B854}
+.auto{display:flex;flex-direction:column;gap:9px;margin-top:10px}
+.steps{display:flex;gap:3px}
+.step{flex:1;height:26px;border-radius:4px;border:1px solid var(--line);background:var(--ground);display:grid;place-items:center;font-family:var(--mono);font-size:10.5px;color:var(--ink-3)}
+.step.on{background:rgba(140,123,224,.16);border-color:rgba(140,123,224,.45);color:#A79AEA}
+.step.cur{background:var(--violet);border-color:var(--violet);color:#14101F;font-weight:600}
+.rail{font-size:12px;color:var(--ink-2);display:flex;gap:8px;align-items:baseline}
+.rail em{font-style:normal;color:var(--ink);font-family:var(--mono);font-size:11.5px}
+</style>
+</head>
+<body>
+<div class="badge-opt">Opción A · Consola</div>
+
+<header class="top">
+  <div class="brand">HIL<span>O</span></div>
+  <div class="counters">
+    <div class="counter"><span class="dot" style="background:var(--red)"></span>Te esperan <b>4</b></div>
+    <div class="counter"><span class="dot" style="background:var(--amber)"></span>Enfriándose <b>3</b></div>
+    <div class="counter"><span class="dot" style="background:var(--violet)"></span>Sin identificar <b>1</b></div>
+    <div class="who"><span class="av">AF</span> Axel</div>
+  </div>
+</header>
+
+<div class="shell">
+
+  <!-- ============ COLA ============ -->
+  <aside class="col col-queue">
+    <div class="sec-head"><span class="lbl">Cola de hoy</span><span class="lbl">Urgencia ↓</span></div>
+
+    <button class="qitem is-active">
+      <div class="qtop"><span class="qname">Panadería La Espiga</span><span class="qage">2 d</span></div>
+      <div class="qmsg">«Quedamos en que me mandabas el número nuevo…»</div>
+      <span class="qball ball-me">La pelota es tuya</span>
+      <div class="qchans"><i class="chdot" style="background:var(--ch-mail)"></i><i class="chdot" style="background:var(--ch-wa)"></i><i class="chdot" style="background:var(--ch-ig)"></i><i class="chdot" style="background:var(--ch-call)"></i></div>
+    </button>
+
+    <button class="qitem">
+      <div class="qtop"><span class="qname">Distribuidora Kern</span><span class="qage">5 d</span></div>
+      <div class="qmsg">«Necesitamos el contrato para cerrar el mes»</div>
+      <span class="qball ball-me">Compromiso vencido</span>
+      <div class="qchans"><i class="chdot" style="background:var(--ch-mail)"></i><i class="chdot" style="background:var(--ch-tg)"></i></div>
+    </button>
+
+    <button class="qitem">
+      <div class="qtop"><span class="qname">Marina F.</span><span class="qage">3 h</span></div>
+      <div class="qmsg">marina.f@laespiga.com.ar — sin alias</div>
+      <span class="qball ball-new">Identificar · 92 % La Espiga</span>
+      <div class="qchans"><i class="chdot" style="background:var(--ch-mail)"></i></div>
+    </button>
+
+    <button class="qitem">
+      <div class="qtop"><span class="qname">Gimnasio Nudo</span><span class="qage">11 d</span></div>
+      <div class="qmsg">Sin movimiento desde la propuesta</div>
+      <span class="qball ball-cold">Enfriándose</span>
+      <div class="qchans"><i class="chdot" style="background:var(--ch-wa)"></i><i class="chdot" style="background:var(--ch-call)"></i></div>
+    </button>
+
+    <button class="qitem">
+      <div class="qtop"><span class="qname">Café Volta</span><span class="qage">1 d</span></div>
+      <div class="qmsg">La IA respondió sola · esperando a Lucía</div>
+      <span class="qball ball-them">Esperás respuesta</span>
+      <div class="qchans"><i class="chdot" style="background:var(--ch-ig)"></i><i class="chdot" style="background:var(--ch-mail)"></i></div>
+    </button>
+  </aside>
+
+  <!-- ============ HILO ============ -->
+  <main class="col">
+    <div class="thead">
+      <div class="trow">
+        <h1 class="tname">Panadería La Espiga</h1>
+        <span class="pill pill-state">Negociación</span>
+        <span class="pill">24 días de contacto</span>
+      </div>
+      <div class="tids">
+        <span class="idchip"><i class="chdot" style="background:var(--ch-mail)"></i>juan.rodriguez@laespiga.com.ar</span>
+        <span class="idchip"><i class="chdot" style="background:var(--ch-wa)"></i>+54 9 11 5555-1234</span>
+        <span class="idchip"><i class="chdot" style="background:var(--ch-ig)"></i>@laespiga.ok</span>
+        <span class="idchip"><i class="chdot" style="background:var(--ch-tg)"></i>@jrlaespiga</span>
+        <span class="idchip" style="color:var(--violet);border-color:rgba(140,123,224,.4)">+ vincular identidad</span>
+      </div>
+    </div>
+
+    <div class="tbody">
+      <div class="daysep"><span class="lbl">2 de agosto</span></div>
+
+      <div class="ev">
+        <div class="evmeta"><span class="evtime">16:40</span><span class="evchan" style="color:var(--ch-call)">Llamada</span></div>
+        <div class="bub" style="border-left-color:var(--ch-call)">
+          <div class="bubfrom">Registrado por Axel · 22 min <span class="tag-ai">transcripto</span></div>
+          <p>Tiene tres sucursales. Hoy toman los pedidos por WhatsApp a mano y los pasan a un cuaderno. Lo que más le duele es perder pedidos los sábados a la mañana, que es cuando se satura. La decisión la toma con su socia Marina.</p>
+          <div class="att">
+            <span class="attbox">◉ audio-2ago.m4a · 22:14</span>
+            <span class="attbox">▣ foto-cuaderno.jpg</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="daysep"><span class="lbl">5 de agosto</span></div>
+      <div class="ev">
+        <div class="evmeta"><span class="evtime">10:12</span><span class="evchan" style="color:var(--ch-mail)">Mail</span></div>
+        <div class="bub out" style="border-left-color:var(--ch-mail)">
+          <div class="bubfrom">Axel → Juan</div>
+          <p>Te paso la propuesta para las tres sucursales, con el módulo de pedidos y la migración incluida.</p>
+          <div class="att"><span class="attbox">▤ propuesta-laespiga-v1.pdf</span></div>
+        </div>
+      </div>
+
+      <div class="daysep"><span class="lbl">12 de agosto</span></div>
+      <div class="ev">
+        <div class="evmeta"><span class="evtime">21:07</span><span class="evchan" style="color:var(--ch-wa)">WhatsApp</span></div>
+        <div class="bub" style="border-left-color:var(--ch-wa)">
+          <div class="bubfrom">Juan Rodríguez</div>
+          <p>Lo vimos con Marina. Nos cierra la propuesta pero el precio nos queda justo para arrancar con las tres juntas.</p>
+        </div>
+      </div>
+
+      <div class="daysep"><span class="lbl">14 de agosto</span></div>
+      <div class="ev">
+        <div class="evmeta"><span class="evtime">09:02</span><span class="evchan" style="color:var(--ch-wa)">WhatsApp</span></div>
+        <div class="bub out" style="border-left-color:var(--ch-wa)">
+          <div class="bubfrom">Hilo <span class="tag-ai">IA · aprobado por Axel</span></div>
+          <p>Juan, buenísimo que les cierre. Déjenme revisar los números y te acerco una alternativa para arrancar sin resignar sucursales. Te escribo el lunes.</p>
+        </div>
+      </div>
+
+      <div class="daysep"><span class="lbl">20 de agosto · hace 2 días</span></div>
+      <div class="ev">
+        <div class="evmeta"><span class="evtime">08:31</span><span class="evchan" style="color:var(--ch-mail)">Mail</span></div>
+        <div class="bub unread" style="border-left-color:var(--ch-mail)">
+          <div class="bubfrom">Juan Rodríguez · sin responder</div>
+          <p>Buen día Axel. Quedamos en que me mandabas el número nuevo y todavía no me llegó. Seguimos interesados pero necesitamos definirlo esta semana, porque Marina se va de viaje el viernes.</p>
+        </div>
+      </div>
+      <div class="sys">▲ La IA subió el estado a Negociación y marcó un compromiso vencido</div>
+    </div>
+  </main>
+
+  <!-- ============ PANEL IA ============ -->
+  <aside class="col col-ai">
+    <div class="sec-head"><span class="lbl">Resumen de la IA</span><span class="lbl">hace 2 min</span></div>
+
+    <div class="aisec">
+      <div class="ball-hero">
+        <span class="lbl">La pelota es tuya</span>
+        <div class="big">Hace 2 días que Juan espera el precio revisado</div>
+        <div class="sub">Y tiene fecha límite: Marina viaja el viernes.</div>
+      </div>
+      <dl class="kv">
+        <dt>Quién es</dt><dd>Juan Rodríguez, dueño de tres panaderías en Villa Urquiza. Decide junto a su socia Marina.</dd>
+        <dt>Ritmo</dt><dd>Suele contestar en 3 h. Van 51 h en silencio de tu lado.</dd>
+      </dl>
+      <div class="temp"><i></i></div>
+    </div>
+
+    <div class="aisec">
+      <span class="lbl">Lo último que se habló</span>
+      <ul class="bul">
+        <li>Aceptaron la propuesta en lo funcional; el freno es el precio de arrancar con tres sucursales juntas.</li>
+        <li>Le prometiste una alternativa el lunes 14 y todavía no salió.</li>
+        <li>Apareció una fecha dura: Marina viaja el viernes 22.</li>
+      </ul>
+    </div>
+
+    <div class="aisec">
+      <span class="lbl">Compromisos abiertos</span>
+      <div class="cmt"><span class="cmt-ico cmt-late">!</span><div><b>Enviar el presupuesto revisado</b><small>Vos · vencía el 18 ago · 4 días tarde</small></div></div>
+      <div class="cmt"><span class="cmt-ico cmt-wait">⟳</span><div><b>Confirmar con Marina</b><small>Juan · antes del viernes</small></div></div>
+    </div>
+
+    <div class="aisec">
+      <span class="lbl">Borrador sugerido</span>
+      <div class="draft" style="margin-top:9px">
+        <p>Juan, tenés razón, me colgué con el número y te pido disculpas. Va el revisado: <b>15 % abajo</b> por las tres sucursales juntas, con la migración de los pedidos históricos incluida. Si les sirve, lo activamos el lunes y el sábado ya lo cubren con el sistema. ¿Lo vemos 15 minutos mañana con Marina antes de que viaje?</p>
+        <div class="dactions">
+          <button class="btn btn-primary">Enviar por mail</button>
+          <button class="btn">Editar</button>
+          <button class="btn">Otro tono</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="aisec">
+      <span class="lbl">Autonomía para este cliente</span>
+      <div class="auto">
+        <div class="steps">
+          <span class="step on">0</span><span class="step on">1</span><span class="step on">2</span>
+          <span class="step cur">3</span><span class="step">4</span><span class="step">5</span>
+        </div>
+        <div class="rail"><em>Nivel 3</em> Redacta y te pide permiso antes de enviar.</div>
+        <div class="rail" style="color:var(--ink-3)">Barandas: no ofrecer más de 15 % · escalar si nombra un competidor · no responder fuera de 8–20 h.</div>
+      </div>
+    </div>
+  </aside>
+</div>
+</body>
+</html>

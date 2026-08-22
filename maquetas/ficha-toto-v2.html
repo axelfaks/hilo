@@ -1,0 +1,599 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hilo — Ficha de cliente</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Public+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* ============================================================
+   HILO — Sistema de diseño (embebido). Todo sale de :root.
+   ============================================================ */
+:root{
+  --bg:#F6F8F7; --surface:#FFFFFF;
+  --line:#E1E7E4; --line-soft:#EDF1EF;
+  --ink:#141F1C; --ink-2:#41504B; --ink-3:#879591;
+  --accent:#0E6B5C; --accent-strong:#0A5347; --accent-soft:#E3EFEC; --accent-line:#CADFD9; --on-accent:#FFFFFF;
+  --ch-mail:#96690F; --ch-mail-soft:#F5EEDD;
+  --ch-wa:#1C7247;   --ch-wa-soft:#E1EFE7;
+  --ch-ig:#A82F60;   --ch-ig-soft:#F7E6EE;
+  --ch-tg:#1A6F9E;   --ch-tg-soft:#E1EEF5;
+  --ch-call:#544896; --ch-call-soft:#ECEAF6;
+  --st-yours:#AE3B2C;   --st-yours-soft:#FAE8E4;
+  --st-waiting:#0A5347; --st-waiting-soft:#E3EFEC;
+  --st-cooling:#96690F; --st-cooling-soft:#F8EFD9;
+  --st-unknown:#5B6B72; --st-unknown-soft:#EAEEF0;
+  --font-serif:"Newsreader",ui-serif,Georgia,"Times New Roman",serif;
+  --font-sans:"Public Sans",ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --fs-display:38px; --lh-display:1.1;
+  --fs-title:26px;   --lh-title:1.25;
+  --fs-heading:20px; --lh-heading:1.3;
+  --fs-body:15px;    --lh-body:1.55;
+  --fs-small:13px;   --lh-small:1.5;
+  --fs-micro:11px;   --lh-micro:1.4;
+  --w-regular:400; --w-medium:500; --w-semi:600; --w-bold:700;
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px; --sp-7:32px; --sp-8:48px;
+  --r-xs:4px; --r-sm:6px; --r-md:9px; --r-lg:11px; --r-pill:999px;
+  --shadow:0 2px 10px rgba(20,31,28,.06);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-sans);font-size:var(--fs-body);line-height:var(--lh-body);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+
+.label{display:inline-block;font-size:var(--fs-micro);line-height:var(--lh-micro);font-weight:var(--w-semi);letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg)}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--sp-2);font-family:var(--font-sans);font-size:var(--fs-small);font-weight:var(--w-semi);line-height:1;padding:var(--sp-3) var(--sp-4);border-radius:var(--r-sm);border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer;transition:background .12s ease,border-color .12s ease,color .12s ease;user-select:none}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.btn--primary:hover{background:var(--accent-strong);border-color:var(--accent-strong)}
+.btn--secondary:hover{border-color:var(--ink-3)}
+.btn--lg{font-size:15px;padding:14px 22px;border-radius:var(--r-md)}
+
+.chip{--chip-fg:var(--ink-2);--chip-bg:var(--bg);display:inline-flex;align-items:center;gap:var(--sp-2);font-size:var(--fs-micro);line-height:1;font-weight:var(--w-bold);letter-spacing:.06em;text-transform:uppercase;color:var(--chip-fg);background:var(--chip-bg);border:1px solid transparent;border-radius:var(--r-pill);padding:5px 10px}
+.chip::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--chip-fg)}
+.chip--mail{--chip-fg:var(--ch-mail);--chip-bg:var(--ch-mail-soft)}
+.chip--wa{--chip-fg:var(--ch-wa);--chip-bg:var(--ch-wa-soft)}
+.chip--ig{--chip-fg:var(--ch-ig);--chip-bg:var(--ch-ig-soft)}
+.chip--tg{--chip-fg:var(--ch-tg);--chip-bg:var(--ch-tg-soft)}
+.chip--call{--chip-fg:var(--ch-call);--chip-bg:var(--ch-call-soft)}
+
+/* Badge de estado (uno u otro) */
+.state{display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:var(--w-bold);letter-spacing:.09em;text-transform:uppercase;color:var(--st-yours);background:var(--st-yours-soft);border-radius:var(--r-pill);padding:6px 13px}
+.state::before{content:"●";font-size:9px;line-height:1}
+.state--waiting{color:var(--st-waiting);background:var(--st-waiting-soft)}
+
+/* ============================================================
+   BARRA SUPERIOR
+   ============================================================ */
+.bar{background:var(--surface);border-bottom:1px solid var(--line)}
+.bar-in{max-width:1120px;margin:0 auto;padding:0 var(--sp-7);height:54px;display:flex;align-items:center;gap:var(--sp-3)}
+.logo{font-family:var(--font-serif);font-size:19px;font-weight:var(--w-semi);letter-spacing:-.01em;color:var(--accent)}
+.crumb{font-size:var(--fs-small);color:var(--ink-3)}
+.crumb b{color:var(--ink-2);font-weight:var(--w-medium)}
+.bar-right{margin-left:auto;display:flex;gap:var(--sp-2);align-items:center}
+.tag{font-size:12px;color:var(--ink-2);background:var(--bg);border:1px solid var(--line);border-radius:var(--r-pill);padding:4px 11px}
+.tag b{font-variant-numeric:tabular-nums;color:var(--ink)}
+
+.wrap{max-width:1120px;margin:0 auto;padding:24px var(--sp-7) 70px}
+
+/* ============================================================
+   ENCABEZADO — nombre + scorer de importancia + autonomía
+   ============================================================ */
+.head{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--sp-5);margin-bottom:var(--sp-5);flex-wrap:wrap}
+.h-name{font-family:var(--font-serif);font-size:32px;font-weight:var(--w-medium);letter-spacing:-.025em;line-height:1.1}
+.h-sub{font-size:var(--fs-small);color:var(--ink-3);margin-top:6px}
+.h-sub b{color:var(--ink-2);font-weight:var(--w-semi)}
+.h-sub i{font-style:normal;padding:0 6px;color:var(--line)}
+.head-controls{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}
+.auto-ico{position:relative;width:34px;height:34px;flex:none;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);color:var(--accent-strong);font-size:15px;display:grid;place-items:center;cursor:pointer;transition:border-color .12s ease}
+.auto-ico:hover{border-color:var(--ink-3)}
+.auto-ico:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.auto-ico .lvl-dot{position:absolute;right:-5px;top:-5px;width:16px;height:16px;border-radius:50%;background:var(--accent);color:#fff;font-size:9px;font-weight:var(--w-bold);display:grid;place-items:center;border:2px solid var(--surface)}
+.score{display:flex;flex-direction:column;gap:6px}
+.score-lbl{font-size:10.5px;font-weight:var(--w-bold);letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)}
+.seg{display:inline-flex;background:var(--bg);border:1px solid var(--line);border-radius:var(--r-sm);padding:2px}
+.seg button{border:0;background:transparent;font:inherit;font-size:12.5px;font-weight:var(--w-semi);color:var(--ink-3);padding:6px 13px;border-radius:5px;cursor:pointer;transition:background .12s ease,color .12s ease}
+.seg button:hover{color:var(--ink-2)}
+.seg button.on{background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
+.seg--imp button.on[data-imp="alta"]{color:var(--st-yours)}
+.seg--imp button.on[data-imp="media"]{color:var(--st-cooling)}
+.seg--imp button.on[data-imp="baja"]{color:var(--ink-2)}
+.auto-btn{display:flex;align-items:center;gap:11px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);padding:9px 13px;cursor:pointer;text-align:left;transition:border-color .12s ease}
+.auto-btn:hover{border-color:var(--ink-3)}
+.auto-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.auto-spark{width:30px;height:30px;flex:none;border-radius:var(--r-sm);background:var(--accent-soft);color:var(--accent-strong);display:grid;place-items:center;font-size:15px}
+.auto-txt{display:flex;flex-direction:column;gap:2px;line-height:1.2}
+.auto-txt .k{font-size:10.5px;font-weight:var(--w-bold);letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)}
+.auto-txt .v{font-size:13.5px;font-weight:var(--w-semi);color:var(--ink)}
+.auto-txt .v b{color:var(--accent-strong)}
+.auto-caret{color:var(--ink-3);font-size:12px;margin-left:2px}
+
+/* ============================================================
+   FOCO — contador + acción + botón IA
+   ============================================================ */
+.focus{position:relative;overflow:hidden;border-left:4px solid var(--st-yours)}
+.focus-top{display:flex;align-items:center;gap:var(--sp-3);padding:14px 26px;border-bottom:1px solid var(--line-soft);background:linear-gradient(180deg,#FDF6F4,var(--surface))}
+.focus-top .meta{margin-left:auto;font-size:var(--fs-small);color:var(--ink-3)}
+.focus-top .meta b{color:var(--ink-2);font-weight:var(--w-semi);font-variant-numeric:tabular-nums}
+.focus-grid{display:grid;grid-template-columns:340px 1fr}
+.time{padding:26px 28px;border-right:1px solid var(--line-soft);display:flex;flex-direction:column;justify-content:center}
+.time-pre{font-size:var(--fs-micro);font-weight:var(--w-bold);letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)}
+.time-num{font-family:var(--font-serif);font-size:60px;line-height:1;font-weight:var(--w-medium);letter-spacing:-.02em;color:var(--ink);font-variant-numeric:tabular-nums;margin:8px 0 8px}
+.time-num.ok{color:var(--st-waiting)}
+.time-num.warn{color:var(--st-cooling)}
+.time-num.late{color:var(--st-yours)}
+.time-post{font-size:var(--fs-small);color:var(--ink-2);line-height:1.5}
+.time-post b{font-variant-numeric:tabular-nums}
+.time-flag{display:inline-flex;align-items:center;gap:7px;margin-top:14px;font-size:12.5px;font-weight:var(--w-semi);color:var(--st-yours);background:var(--st-yours-soft);border-radius:var(--r-sm);padding:7px 10px;line-height:1.35}
+.act{padding:26px 28px;display:flex;flex-direction:column}
+.act-h{font-family:var(--font-serif);font-size:27px;font-weight:var(--w-medium);letter-spacing:-.02em;line-height:1.28;text-wrap:balance;max-width:24em;margin-top:8px;color:var(--ink)}
+.act-why{font-size:14.5px;color:var(--ink-2);line-height:1.6;margin-top:11px;max-width:48em}
+.act-cta{display:flex;gap:var(--sp-2);flex-wrap:wrap;margin-top:auto;padding-top:20px}
+.spark{font-size:15px;line-height:1;transform:translateY(-1px)}
+.act-foot{font-size:12px;color:var(--ink-3);margin-top:11px;display:flex;align-items:center;gap:6px}
+
+/* ============================================================
+   ETAPA — stepper visual (ahora DEBAJO del foco)
+   ============================================================ */
+.stage-card{padding:20px 26px 16px;margin-top:var(--sp-5)}
+.stage-top{display:flex;align-items:baseline;justify-content:space-between;gap:var(--sp-3);margin-bottom:20px}
+.stage-top .now-lbl{font-family:var(--font-serif);font-size:var(--fs-heading);font-weight:var(--w-medium);letter-spacing:-.02em;color:var(--ink)}
+.stage-top .now-lbl b{color:var(--accent-strong);font-weight:var(--w-medium)}
+.stage-top .prog{font-size:12.5px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.stepper{display:flex}
+.st{flex:1;position:relative;text-align:center;padding-top:26px;cursor:pointer}
+.st:hover .node{border-color:var(--accent)}
+.st:hover .st-t{color:var(--accent-strong)}
+.st::before{content:"";position:absolute;top:9px;left:calc(-50% + 8px);right:calc(50% + 8px);height:2px;background:var(--line)}
+.st:first-child::before{display:none}
+.st.done::before,.st.now::before{background:var(--accent)}
+.st .node{position:absolute;top:2px;left:50%;transform:translateX(-50%);width:16px;height:16px;border-radius:50%;background:var(--surface);border:2px solid var(--line);z-index:1}
+.st.done .node{background:var(--accent);border-color:var(--accent)}
+.st.done .node::after{content:"✓";position:absolute;inset:0;display:grid;place-items:center;font-size:9px;font-weight:900;color:#fff}
+.st.now .node{width:20px;height:20px;top:0;background:var(--accent);border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
+.st .st-k{display:block;font-size:10px;font-weight:var(--w-bold);letter-spacing:.08em;color:var(--ink-3)}
+.st .st-t{display:block;font-size:12.5px;color:var(--ink-3);margin-top:1px}
+.st.done .st-t{color:var(--ink-2)}
+.st.now .st-t{color:var(--accent-strong);font-weight:var(--w-bold)}
+.st.now .st-k{color:var(--accent)}
+.stage-note{font-size:12px;color:var(--ink-3);margin-top:16px;text-align:center}
+.link{color:var(--accent);text-decoration:none;border-bottom:1px solid var(--accent-line);font-weight:var(--w-medium)}
+.link:hover{border-bottom-color:var(--accent)}
+
+/* ============================================================
+   SEGUNDO NIVEL
+   ============================================================ */
+.second{margin-top:var(--sp-6)}
+.second-head{display:flex;align-items:baseline;gap:var(--sp-3);margin-bottom:var(--sp-3)}
+.second-head span.hint{font-size:12.5px;color:var(--ink-3)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0;overflow:hidden}
+.sub{padding:18px 22px;border-right:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft)}
+.sub:nth-child(2n){border-right:0}
+.sub:nth-last-child(-n+2){border-bottom:0}
+.sub .label{margin-bottom:9px}
+.sub p{font-size:13.5px;color:var(--ink-2);line-height:1.6}
+.bul{list-style:none;display:flex;flex-direction:column;gap:8px}
+.bul li{display:grid;grid-template-columns:14px 1fr;gap:6px;font-size:13.5px;color:var(--ink-2);line-height:1.5}
+.bul li::before{content:"—";color:var(--ink-3)}
+.ritmo{display:flex;align-items:baseline;gap:9px}
+.ritmo .n{font-family:var(--font-serif);font-size:24px;font-weight:var(--w-medium);letter-spacing:-.02em;font-variant-numeric:tabular-nums;color:var(--ink)}
+.ritmo .c{font-size:12.5px;color:var(--ink-3);line-height:1.4}
+.cmt{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start}
+.cmt + .cmt{margin-top:11px}
+.cmt-ico{width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font-size:11px;font-weight:var(--w-bold)}
+.cmt-ico.late{background:var(--st-yours-soft);color:var(--st-yours)}
+.cmt-ico.wait{background:var(--st-waiting-soft);color:var(--st-waiting)}
+.cmt b{display:block;font-size:13.5px;font-weight:var(--w-semi);color:var(--ink)}
+.cmt small{font-size:12px;color:var(--ink-3)}
+
+/* ============================================================
+   UN ALIAS, CUATRO PUERTAS
+   ============================================================ */
+.puertas{margin-top:var(--sp-6);padding:18px 22px}
+.puertas-head{display:flex;align-items:baseline;justify-content:space-between;gap:var(--sp-3)}
+.puertas-note{font-size:12px;color:var(--ink-3)}
+.puertas-row{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--sp-3);margin-top:14px}
+.puerta{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--ink-2);border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 12px;background:var(--bg);min-width:0}
+.puerta .cdot{width:8px;height:8px;border-radius:50%;flex:none}
+.puerta span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.guard{font-size:12.5px;color:var(--ink-3);line-height:1.55;margin-top:14px;padding-top:12px;border-top:1px solid var(--line-soft)}
+.guard b{color:var(--ink-2)}
+
+/* ============================================================
+   CONVERSACIÓN — chat de dos lados + filtro + resumen IA
+   ============================================================ */
+.conv-head{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--sp-4);margin:34px 0 16px;flex-wrap:wrap}
+.sec-title{font-family:var(--font-serif);font-size:var(--fs-heading);font-weight:var(--w-medium);letter-spacing:-.02em}
+.sec-note{font-size:var(--fs-small);color:var(--ink-3);margin-top:2px}
+.filters{display:flex;gap:6px;flex-wrap:wrap}
+.fbtn{font:inherit;font-size:12px;font-weight:var(--w-semi);color:var(--ink-2);background:var(--surface);border:1px solid var(--line);border-radius:var(--r-pill);padding:6px 12px;cursor:pointer;transition:background .12s ease,border-color .12s ease,color .12s ease}
+.fbtn:hover{border-color:var(--ink-3)}
+.fbtn.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.sides{display:flex;justify-content:space-between;font-size:11px;font-weight:var(--w-bold);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-bottom:14px;padding:0 2px}
+.thread{display:flex;flex-direction:column;gap:16px}
+.msg{display:flex;flex-direction:column;max-width:70%}
+.msg.in{align-items:flex-start;margin-right:auto}
+.msg.out{align-items:flex-end;margin-left:auto}
+.msg.log{max-width:100%;align-items:center}
+.msg-sum{font-size:12px;color:var(--ink-3);margin-bottom:5px;display:flex;gap:6px;align-items:baseline;line-height:1.4}
+.msg-sum::before{content:"✦";color:var(--ch-call);font-size:11px}
+.msg.out .msg-sum{flex-direction:row-reverse;text-align:right}
+.msg-meta{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px;color:var(--ink-3)}
+.msg.out .msg-meta{flex-direction:row-reverse}
+.msg-who{font-weight:var(--w-semi);color:var(--ink-2)}
+.msg-date{font-variant-numeric:tabular-nums}
+.msg-bubble{padding:12px 15px;border-radius:var(--r-md);font-size:14px;line-height:1.6}
+.msg.in .msg-bubble{background:var(--surface);border:1px solid var(--line);color:var(--ink-2);border-bottom-left-radius:var(--r-xs)}
+.msg.out .msg-bubble{background:var(--accent-soft);border:1px solid var(--accent-line);color:var(--ink);border-bottom-right-radius:var(--r-xs)}
+.msg.in.hot .msg-bubble{border-color:#E7C6BF;box-shadow:0 0 0 3px var(--st-yours-soft)}
+.new-tag{font-size:10px;font-weight:var(--w-bold);letter-spacing:.07em;text-transform:uppercase;color:var(--st-yours);background:var(--st-yours-soft);border-radius:var(--r-xs);padding:2px 6px}
+.ai-tag{font-size:10px;font-weight:var(--w-bold);letter-spacing:.07em;text-transform:uppercase;color:var(--ch-call);background:var(--ch-call-soft);border-radius:var(--r-xs);padding:2px 6px}
+.att{display:flex;gap:7px;margin-top:9px;flex-wrap:wrap}
+.attbox{font-size:12px;color:var(--ink-2);border:1px solid var(--line);border-radius:var(--r-sm);padding:5px 9px;background:var(--bg)}
+.msg.log .logcard{background:var(--ch-call-soft);border:1px solid #D9D4EE;border-radius:var(--r-md);padding:13px 16px;max-width:60ch}
+.msg.log .msg-sum{justify-content:center}
+.msg.log .msg-meta{justify-content:center}
+.msg.log .logcard p{font-size:13.5px;color:var(--ink-2);line-height:1.6}
+.more-wrap{display:flex;justify-content:center;margin-top:20px}
+
+/* ============================================================
+   POPUP — borrador de la IA
+   ============================================================ */
+.overlay{position:fixed;inset:0;background:rgba(20,31,28,.45);display:none;align-items:center;justify-content:center;padding:24px;z-index:100}
+.overlay.open{display:flex}
+.modal{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);max-width:580px;width:100%;box-shadow:0 24px 70px rgba(20,31,28,.28);overflow:hidden;animation:pop .16s ease}
+@keyframes pop{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
+.modal-head{padding:18px 22px;border-bottom:1px solid var(--line-soft);display:flex;align-items:flex-start;gap:12px}
+.modal-head .auto-spark{width:34px;height:34px;font-size:16px}
+.modal-head .mh-txt{display:flex;flex-direction:column;gap:3px}
+.modal-title{font-family:var(--font-serif);font-size:19px;font-weight:var(--w-medium);letter-spacing:-.01em;color:var(--ink);line-height:1.2}
+.modal-sub{font-size:12.5px;color:var(--ink-3)}
+.modal-x{margin-left:auto;background:transparent;border:0;color:var(--ink-3);font-size:20px;cursor:pointer;line-height:1;padding:2px 6px;border-radius:var(--r-sm)}
+.modal-x:hover{color:var(--ink);background:var(--bg)}
+.modal-body{padding:18px 22px}
+.modal-to{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-3);margin-bottom:12px}
+.modal-to b{color:var(--ink-2);font-weight:var(--w-semi)}
+.draft-area{width:100%;min-height:168px;border:1px solid var(--line);border-radius:var(--r-md);padding:14px 15px;font-family:var(--font-sans);font-size:14.5px;line-height:1.66;color:var(--ink);resize:vertical;background:var(--bg);transition:background .12s ease,border-color .12s ease}
+.draft-area:focus{outline:none;border-color:var(--accent);background:var(--surface);box-shadow:0 0 0 3px var(--accent-soft)}
+.modal-hint{font-size:12px;color:var(--ink-3);margin-top:10px;display:flex;align-items:center;gap:6px}
+.modal-tone{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
+.tone{font:inherit;font-size:12px;font-weight:var(--w-semi);color:var(--ink-2);background:var(--bg);border:1px solid var(--line);border-radius:var(--r-pill);padding:5px 11px;cursor:pointer}
+.tone:hover{border-color:var(--ink-3)}
+.modal-foot{padding:15px 22px;border-top:1px solid var(--line-soft);display:flex;gap:10px;justify-content:flex-end;align-items:center;background:var(--bg)}
+.modal-foot .spacer{margin-right:auto;font-size:12px;color:var(--ink-3)}
+
+/* Toast */
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(16px);background:var(--ink);color:#fff;padding:12px 18px;border-radius:var(--r-md);font-size:13.5px;font-weight:var(--w-semi);display:flex;align-items:center;gap:9px;opacity:0;pointer-events:none;transition:opacity .2s ease,transform .2s ease;z-index:110;box-shadow:0 10px 30px rgba(20,31,28,.3)}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast .tk{color:#8FE0CD}
+
+@media (max-width:760px){
+  .head{flex-direction:column}
+  .focus-grid{grid-template-columns:1fr}
+  .time{border-right:0;border-bottom:1px solid var(--line-soft)}
+  .grid2{grid-template-columns:1fr}
+  .sub{border-right:0}
+  .puertas-row{grid-template-columns:1fr 1fr}
+  .st .st-t{font-size:11px}
+  .msg{max-width:88%}
+}
+</style>
+</head>
+<body>
+
+<div class="bar"><div class="bar-in">
+  <span class="logo">Hilo</span>
+  <span class="crumb">Clientes / <b>Panadería La Espiga</b></span>
+  <div class="bar-right">
+    <span class="tag"><b>4</b> te esperan</span>
+    <span class="tag"><b>3</b> enfriándose</span>
+    <span class="tag"><b>1</b> sin identificar</span>
+  </div>
+</div></div>
+
+<div class="wrap">
+
+  <!-- Encabezado -->
+  <div class="head">
+    <div>
+      <h1 class="h-name">Panadería La Espiga</h1>
+      <p class="h-sub"><b>Juan Rodríguez</b>, dueño<i>·</i>24 días de contacto<i>·</i>4 canales</p>
+    </div>
+    <div class="head-controls">
+      <div class="score">
+        <span class="score-lbl">Importancia</span>
+        <div class="seg seg--imp" id="impSeg">
+          <button data-imp="baja">Poca</button>
+          <button data-imp="media">Media</button>
+          <button data-imp="alta" class="on">Mucha</button>
+        </div>
+      </div>
+      <button class="auto-ico" title="Autonomía de la IA · Nivel 3 — pide permiso antes de enviar" aria-label="Autonomía de la IA, nivel 3, pide permiso antes de enviar">✦<span class="lvl-dot">3</span></button>
+    </div>
+  </div>
+
+  <!-- FOCO -->
+  <section class="card focus" id="focus">
+    <div class="focus-top">
+      <span class="state" id="stateBadge">La pelota es tuya</span>
+      <span class="meta">Último contacto hace <b>2 días</b> · por Mail</span>
+    </div>
+    <div class="focus-grid">
+      <div class="time">
+        <span class="time-pre">Sin contacto desde hace</span>
+        <span class="time-num">2 días</span>
+        <span class="time-post">Juan te escribió y sigue esperando.<br>Suele responder en 3 h.</span>
+        <span class="time-flag">⚠ El presupuesto que prometiste vencía hace 4 días</span>
+      </div>
+      <div class="act">
+        <span class="label">Lo que hay que hacer</span>
+        <h2 class="act-h">Mandarle el presupuesto revisado, con el 15 % por tomar las tres sucursales juntas.</h2>
+        <p class="act-why">Aceptaron la propuesta en lo funcional; el único freno es el precio de arrancar con las tres. Marina viaja el viernes y quieren definirlo antes.</p>
+        <div class="act-cta">
+          <button class="btn btn--primary btn--lg" id="actCta"><span class="spark">✦</span> Que la IA lo resuelva</button>
+          <button class="btn btn--secondary btn--lg" id="convBtn">Conversación</button>
+        </div>
+        <p class="act-foot">✦ Redacta y te pide permiso antes de enviar · no baja de 15 % · no escribe fuera de 8 a 20 h.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ETAPA — ahora debajo del foco -->
+  <section class="card stage-card">
+    <div class="stage-top">
+      <span class="now-lbl" id="stageNow">Etapa <b>Negociación</b></span>
+      <span class="prog" id="stageProg">5 de 6</span>
+    </div>
+    <div class="stepper" id="stepper">
+      <div class="st done"><span class="node"></span><span class="st-k">01</span><span class="st-t">Nuevo</span></div>
+      <div class="st done"><span class="node"></span><span class="st-k">02</span><span class="st-t">Calificado</span></div>
+      <div class="st done"><span class="node"></span><span class="st-k">03</span><span class="st-t">Reunión</span></div>
+      <div class="st done"><span class="node"></span><span class="st-k">04</span><span class="st-t">Propuesta</span></div>
+      <div class="st now"><span class="node"></span><span class="st-k">05 · ahora</span><span class="st-t">Negociación</span></div>
+      <div class="st"><span class="node"></span><span class="st-k">06</span><span class="st-t">Cierre</span></div>
+    </div>
+    <p class="stage-note">La IA dedujo la etapa leyendo el hilo. <a class="link" href="#">Editar el flujo</a></p>
+  </section>
+
+  <!-- SEGUNDO NIVEL -->
+  <section class="second">
+    <div class="second-head">
+      <span class="label">El detrás de escena</span>
+      <span class="hint">Todo lo que la IA leyó para llegar a lo de arriba.</span>
+    </div>
+    <div class="card grid2">
+      <div class="sub">
+        <span class="label">Quién es</span>
+        <p>Juan Rodríguez, dueño de tres panaderías en Villa Urquiza. Toma los pedidos por WhatsApp a mano y pierde ventas los sábados. No decide solo: la última palabra la comparte con su socia Marina.</p>
+      </div>
+      <div class="sub">
+        <span class="label">Su ritmo</span>
+        <div class="ritmo"><span class="n">3 h</span><span class="c">es lo que suele tardar Juan en responder.<br>Vos venís demorando 51 h.</span></div>
+      </div>
+      <div class="sub">
+        <span class="label">Lo último que se habló</span>
+        <ul class="bul">
+          <li>Aceptaron la propuesta; el freno es el precio de arrancar con las tres sucursales juntas.</li>
+          <li>Le prometiste una alternativa el lunes 14 y no salió.</li>
+          <li>Fecha dura: Marina viaja el viernes 22.</li>
+        </ul>
+      </div>
+      <div class="sub">
+        <span class="label">Compromisos abiertos</span>
+        <div class="cmt"><span class="cmt-ico late">!</span><div><b>Enviar el presupuesto revisado</b><small>Vos · vencía el 18 de agosto · 4 días tarde</small></div></div>
+        <div class="cmt"><span class="cmt-ico wait">⟳</span><div><b>Confirmar con Marina</b><small>Juan · antes del viernes</small></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CUATRO PUERTAS -->
+  <section class="card puertas">
+    <div class="puertas-head">
+      <span class="label">Un alias, cuatro puertas</span>
+      <span class="puertas-note">1 mensaje sin identificar</span>
+    </div>
+    <div class="puertas-row">
+      <div class="puerta"><i class="cdot" style="background:var(--ch-mail)"></i><span>juan.rodriguez@laespiga.com.ar</span></div>
+      <div class="puerta"><i class="cdot" style="background:var(--ch-wa)"></i><span>+54 9 11 5555-1234</span></div>
+      <div class="puerta"><i class="cdot" style="background:var(--ch-ig)"></i><span>@laespiga.ok</span></div>
+      <div class="puerta"><i class="cdot" style="background:var(--ch-tg)"></i><span>@jrlaespiga</span></div>
+    </div>
+    <p class="guard"><b>marina.f@laespiga.com.ar</b> se parece a este alias (92 %). ¿Es la misma cuenta? <a class="link" href="#">Revisar</a></p>
+  </section>
+
+  <!-- CONVERSACIÓN -->
+  <div class="conv-head" id="conversacion">
+    <div>
+      <h2 class="sec-title">La conversación completa</h2>
+      <p class="sec-note">Recibís a la izquierda, enviás a la derecha. Sin importar por dónde entró.</p>
+    </div>
+    <div class="filters" id="filters">
+      <button class="fbtn on" data-f="all">Todos</button>
+      <button class="fbtn" data-f="mail">Mail</button>
+      <button class="fbtn" data-f="wa">WhatsApp</button>
+      <button class="fbtn" data-f="ig">Instagram</button>
+      <button class="fbtn" data-f="tg">Telegram</button>
+      <button class="fbtn" data-f="call">Llamada</button>
+    </div>
+  </div>
+  <div class="sides"><span>← Juan (recibido)</span><span>Vos / Hilo (enviado) →</span></div>
+
+  <div class="thread" id="thread">
+
+    <div class="msg in hot" data-ch="mail">
+      <div class="msg-sum">Reclama el número prometido y pone fecha límite: Marina viaja el viernes.</div>
+      <div class="msg-meta"><span class="chip chip--mail">Mail</span><span class="msg-who">Juan Rodríguez</span><span class="new-tag">sin responder</span><span class="msg-date">20 ago · 08:31</span></div>
+      <div class="msg-bubble">Buen día Axel. Quedamos en que me mandabas el número nuevo y todavía no me llegó. Seguimos interesados pero necesitamos definirlo esta semana, porque Marina se va de viaje el viernes.</div>
+    </div>
+
+    <div class="msg out" data-ch="wa">
+      <div class="msg-sum">Prometés una alternativa de precio para el lunes.</div>
+      <div class="msg-meta"><span class="chip chip--wa">WhatsApp</span><span class="msg-who">Hilo</span><span class="ai-tag">IA · aprobado</span><span class="msg-date">14 ago · 09:02</span></div>
+      <div class="msg-bubble">Juan, buenísimo que les cierre. Déjenme revisar los números y te acerco una alternativa para arrancar sin resignar sucursales. Te escribo el lunes.</div>
+    </div>
+
+    <div class="msg in" data-ch="wa">
+      <div class="msg-sum">Aceptan la propuesta; traban con el precio de las tres sucursales juntas.</div>
+      <div class="msg-meta"><span class="chip chip--wa">WhatsApp</span><span class="msg-who">Juan Rodríguez</span><span class="msg-date">12 ago · 21:07</span></div>
+      <div class="msg-bubble">Lo vimos con Marina. Nos cierra la propuesta pero el precio nos queda justo para arrancar con las tres juntas.</div>
+    </div>
+
+    <div class="msg out" data-ch="mail">
+      <div class="msg-sum">Enviás la propuesta formal, con módulo de pedidos y migración.</div>
+      <div class="msg-meta"><span class="chip chip--mail">Mail</span><span class="msg-who">Axel</span><span class="msg-date">5 ago · 10:12</span></div>
+      <div class="msg-bubble">Te paso la propuesta para las tres sucursales, con el módulo de pedidos y la migración incluida.
+        <div class="att"><span class="attbox">propuesta-laespiga-v1.pdf</span></div>
+      </div>
+    </div>
+
+    <div class="msg log" data-ch="call">
+      <div class="msg-sum">Relevamiento: 3 sucursales, pedidos a mano, pierde ventas los sábados.</div>
+      <div class="msg-meta"><span class="chip chip--call">Llamada</span><span class="msg-who">Registrada por Axel · 22 min</span><span class="ai-tag">audio transcripto</span><span class="msg-date">2 ago · 16:40</span></div>
+      <div class="logcard"><p>Tiene tres sucursales. Hoy toman los pedidos por WhatsApp a mano y los pasan a un cuaderno. Lo que más le duele es perder pedidos los sábados a la mañana, que es cuando se satura. La decisión la toma con su socia Marina.</p>
+        <div class="att"><span class="attbox">audio-2ago.m4a · 22:14</span><span class="attbox">foto-cuaderno.jpg</span></div>
+      </div>
+    </div>
+
+    <div class="msg in" data-ch="ig">
+      <div class="msg-sum">Primer contacto: pregunta el precio del sistema.</div>
+      <div class="msg-meta"><span class="chip chip--ig">Instagram</span><span class="msg-who">@laespiga.ok</span><span class="msg-date">28 jul · 19:55</span></div>
+      <div class="msg-bubble">Hola! Vi que hacen sistemas de pedidos para panaderías. Cuánto sale?</div>
+    </div>
+
+  </div>
+
+  <div class="more-wrap"><button class="btn btn--secondary" id="moreBtn">Ver más mensajes</button></div>
+
+</div>
+
+<!-- POPUP: borrador de la IA -->
+<div class="overlay" id="overlay" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="auto-spark">✦</span>
+      <div class="mh-txt">
+        <span class="modal-title" id="modalTitle">La IA redactó esta respuesta</span>
+        <span class="modal-sub">Autonomía nivel 3 · necesita tu permiso para enviar</span>
+      </div>
+      <button class="modal-x" id="mClose" aria-label="Cerrar">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-to"><span class="chip chip--mail">Mail</span><span>Para <b>juan.rodriguez@laespiga.com.ar</b></span></div>
+      <textarea class="draft-area" id="draftArea">Juan, tenés razón, me colgué con el número y te pido disculpas. Va el revisado: 15 % abajo por tomar las tres sucursales juntas, con la migración de los pedidos históricos incluida. Si les sirve, lo activamos el lunes y el sábado ya lo cubren con el sistema. ¿Lo vemos 15 minutos mañana con Marina antes de que viaje?</textarea>
+      <p class="modal-hint">✎ Editá lo que quieras antes de enviar. Respeta las barandas: no baja de 15 %.</p>
+      <div class="modal-tone">
+        <button class="tone" data-tone="corto">Más corto</button>
+        <button class="tone" data-tone="calido">Más cálido</button>
+        <button class="tone" data-tone="firme">Más firme</button>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <span class="spacer">Se envía por Mail, el último canal que usó Juan.</span>
+      <button class="btn btn--secondary" id="mDiscard">Descartar</button>
+      <button class="btn btn--primary" id="mSend">Aprobar y enviar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><span class="tk">✓</span><span id="toastMsg"></span></div>
+
+<script>
+(function(){
+  "use strict";
+  function $(id){ return document.getElementById(id); }
+
+  // Scorer de importancia (atributo del cliente · selección visual)
+  Array.prototype.forEach.call(document.querySelectorAll("#impSeg button"), function(b){
+    b.addEventListener("click", function(){
+      Array.prototype.forEach.call(document.querySelectorAll("#impSeg button"), function(x){ x.classList.remove("on"); });
+      b.classList.add("on");
+    });
+  });
+
+  // Filtro por canal + paginación (5 mensajes + ver más)
+  var msgs = Array.prototype.slice.call(document.querySelectorAll("#thread .msg"));
+  var activeFilter = "all", shown = 5, PAGE = 5;
+  var moreBtn = $("moreBtn");
+  function applyList(){
+    var count = 0, total = 0;
+    msgs.forEach(function(m){
+      var match = (activeFilter === "all" || m.getAttribute("data-ch") === activeFilter);
+      if (match){
+        total++;
+        if (count < shown){ m.style.display = ""; count++; }
+        else { m.style.display = "none"; }
+      } else {
+        m.style.display = "none";
+      }
+    });
+    if (total > shown){ moreBtn.style.display = ""; moreBtn.textContent = "Ver más mensajes (" + (total - shown) + ")"; }
+    else { moreBtn.style.display = "none"; }
+  }
+  Array.prototype.forEach.call(document.querySelectorAll("#filters .fbtn"), function(b){
+    b.addEventListener("click", function(){
+      Array.prototype.forEach.call(document.querySelectorAll("#filters .fbtn"), function(x){ x.classList.remove("on"); });
+      b.classList.add("on");
+      activeFilter = b.getAttribute("data-f");
+      shown = PAGE;
+      applyList();
+    });
+  });
+  moreBtn.addEventListener("click", function(){ shown += PAGE; applyList(); });
+  applyList();
+
+  // Etapa: cambiar de estado clickeando un paso
+  var NAMES = ["Nuevo","Calificado","Reunión","Propuesta","Negociación","Cierre"];
+  var steps = Array.prototype.slice.call(document.querySelectorAll("#stepper .st"));
+  steps.forEach(function(s, i){
+    s.addEventListener("click", function(){
+      steps.forEach(function(x, j){
+        x.classList.remove("done","now");
+        if (j < i) x.classList.add("done");
+        else if (j === i) x.classList.add("now");
+        var k = x.querySelector(".st-k");
+        k.textContent = (j === i) ? ("0" + (j+1) + " · ahora") : ("0" + (j+1));
+      });
+      $("stageNow").innerHTML = "Etapa <b>" + NAMES[i] + "</b>";
+      $("stageProg").textContent = (i+1) + " de 6";
+    });
+  });
+
+  // Botón "Conversación" → baja a la conversación
+  $("convBtn").addEventListener("click", function(){
+    document.getElementById("conversacion").scrollIntoView({ behavior:"smooth", block:"start" });
+  });
+
+  // ---- Popup del borrador de la IA ----
+  var overlay = $("overlay"), draft = $("draftArea"), toastEl = $("toast");
+  function openModal(){ overlay.classList.add("open"); setTimeout(function(){ draft.focus(); }, 40); }
+  function closeModal(){ overlay.classList.remove("open"); }
+  function toast(msg){
+    $("toastMsg").textContent = msg;
+    toastEl.classList.add("show");
+    setTimeout(function(){ toastEl.classList.remove("show"); }, 2600);
+  }
+  $("actCta").addEventListener("click", openModal);
+  $("mClose").addEventListener("click", closeModal);
+  $("mDiscard").addEventListener("click", closeModal);
+  overlay.addEventListener("click", function(e){ if (e.target === overlay) closeModal(); });
+  document.addEventListener("keydown", function(e){ if (e.key === "Escape" && overlay.classList.contains("open")) closeModal(); });
+  $("mSend").addEventListener("click", function(){
+    closeModal();
+    toast("Enviado a Juan por Mail");
+  });
+  // Botones de tono (demo): reencuadran el borrador
+  var TONE = {
+    corto:  "Juan, disculpá la demora. Va el revisado: 15 % abajo por tomar las tres sucursales juntas, con la migración incluida. Lo activamos el lunes. ¿15 minutos mañana con Marina antes de que viaje?",
+    calido: "¡Juan! Perdón por la colgada con el número, me hago cargo. Les preparé el revisado con muchas ganas de arrancar juntos: 15 % abajo por tomar las tres sucursales, con la migración de los pedidos históricos incluida. Si les cierra, el lunes lo activamos y el sábado ya lo cubren tranquilos. ¿Nos tomamos 15 minutos mañana con Marina antes de que viaje?",
+    firme:  "Juan, va el presupuesto revisado: 15 % abajo por las tres sucursales juntas, migración incluida. Es el mejor número posible dentro de lo que puedo ofrecer. Propongo activarlo el lunes para que el sábado ya lo cubran. Necesitaría confirmarlo con vos y Marina mañana, antes de su viaje."
+  };
+  Array.prototype.forEach.call(document.querySelectorAll(".modal-tone .tone"), function(b){
+    b.addEventListener("click", function(){ draft.value = TONE[b.getAttribute("data-tone")]; draft.focus(); });
+  });
+
+})();
+</script>
+</body>
+</html>

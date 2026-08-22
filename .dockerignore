@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+hilo.db
+.env
+.hilo_secreto
+web/node_modules/
+maquetas/
+*.tar.gz
