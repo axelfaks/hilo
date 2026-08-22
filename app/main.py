@@ -30,12 +30,23 @@ def _arranque():
     crear_tablas()
     # En un hosting la base arranca vacía. Con HILO_SEMBRAR=1 se carga la demo
     # una sola vez; si ya hay clientes, no toca nada.
+    #
+    # OJO con el orden: sembrar() hace DROP TABLE, y en Postgres eso necesita un
+    # lock exclusivo. Si la sesión que pregunta "¿está vacía?" sigue abierta, su
+    # transacción retiene el lock compartido y el DROP espera para siempre: el
+    # arranque se cuelga y el hosting nunca ve el puerto abierto. Por eso la
+    # consulta se cierra ANTES de sembrar.
     if os.environ.get("HILO_SEMBRAR") == "1":
-        with sesion() as s:
-            if not s.exec(select(Alias)).first():
+        try:
+            with sesion() as s:
+                vacia = s.exec(select(Alias)).first() is None
+            if vacia:
                 from seed import sembrar
                 sembrar()
                 print("[hilo] base vacía: cargué los datos de demo")
+        except Exception as e:
+            # que no se caiga el arranque: sin datos la app igual levanta
+            print(f"[hilo] no pude sembrar ({e})")
 
 
 # --------------------------------------------------------------------- login

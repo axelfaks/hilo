@@ -11,8 +11,9 @@ elif URL.startswith("postgresql://"):
     URL = URL.replace("postgresql://", "postgresql+psycopg://", 1)
 
 DB_PATH = os.environ.get("HILO_DB", "hilo.db")
-engine = (create_engine(URL, pool_pre_ping=True) if URL
-          else create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False}))
+engine = (create_engine(URL, pool_pre_ping=True, connect_args={"connect_timeout": 10})
+          if URL else
+          create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False}))
 
 
 def crear_tablas():
