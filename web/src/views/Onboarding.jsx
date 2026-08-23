@@ -20,6 +20,7 @@ import { salir } from '../App.jsx'
 --------------------------------------------------------------------------- */
 
 const BORRADOR = 'hilo.onboarding.borrador'
+const NEGOCIO_NUEVO = 'hilo_negocio_recien_configurado'
 
 const EJEMPLOS = [
   ['Distribuidora', 'Vendo insumos de limpieza y descartables a kioscos, almacenes y rotiserías del barrio. Me piden precio de dos o tres cosas y después desaparecen. Se me traba cuando quieren pagar a 30 días.'],
@@ -119,7 +120,7 @@ export default function Onboarding({ onListo }) {
        app caía a la lista por defecto. */
     const reglas = { ...(prop.reglas || {}), estados_cerrados: prop.estados_cerrados || [] }
     try {
-      await api.onboardingGuardar({
+      const guardado = await api.onboardingGuardar({
         nombre: (prop.rubro || '').trim() || 'Negocio de ' + firma.trim(),
         descripcion: desc.trim(),
         rubro: prop.rubro || '',
@@ -129,6 +130,12 @@ export default function Onboarding({ onListo }) {
         canales: [{ canal: 'whatsapp', valor: wa.trim() }, ...extra.map(c => ({ canal: c, valor: '' }))],
         autonomia_default: 3,
       })
+      /* El id del negocio que se acaba de configurar. La cuenta se crea DESPUÉS
+         del onboarding, así que sin esto la config queda huérfana y el usuario
+         entra a un negocio vacío: se pierde todo lo que acaba de contestar. */
+      try {
+        if (guardado?.negocio_id) localStorage.setItem(NEGOCIO_NUEVO, String(guardado.negocio_id))
+      } catch { /* da igual */ }
       try { localStorage.removeItem(BORRADOR) } catch { /* da igual */ }
       onListo(destino)
     } catch (e) {

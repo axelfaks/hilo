@@ -120,9 +120,10 @@ def auth_encendida(s: Session) -> bool:
     return hay_usuarios(s)
 
 
-def crear_usuario(s: Session, email: str, contrasena: str, nombre: str, rol: str = "dueño") -> Usuario:
+def crear_usuario(s: Session, email: str, contrasena: str, nombre: str, rol: str = "dueño",
+                  business_id: int | None = None) -> Usuario:
     u = Usuario(email=email.strip().lower(), nombre=nombre.strip() or email.split("@")[0],
-                hash=hashear(contrasena), rol=rol)
+                hash=hashear(contrasena), rol=rol, business_id=business_id)
     s.add(u)
     s.commit()
     s.refresh(u)
@@ -134,4 +135,5 @@ def buscar_por_email(s: Session, email: str) -> Usuario | None:
 
 
 def publico(u: Usuario) -> dict:
-    return {"id": u.id, "email": u.email, "nombre": u.nombre, "rol": u.rol}
+    return {"id": u.id, "email": u.email, "nombre": u.nombre, "rol": u.rol,
+            "negocio_id": u.business_id, "es_root": u.es_root}

@@ -11,6 +11,7 @@ from app.config import cargar as cargar_env
 
 cargar_env()          # para leer MAIL_CLIENTE_DEMO del .env
 
+from app import inquilino                        # noqa: E402
 from app.db import crear_tablas, engine, sesion  # noqa: E402
 from app.models import Alias, Briefing, Business, Commitment, Identity, Message
 
@@ -575,14 +576,22 @@ def sembrar():
     SQLModel.metadata.drop_all(engine, tables=del_negocio)
     SQLModel.metadata.create_all(engine)
     with sesion() as s:
-        s.add(Business(
+        negocio = Business(
             nombre=NEGOCIO["nombre"], descripcion=NEGOCIO["descripcion"],
             estados_json=json.dumps(NEGOCIO["estados"], ensure_ascii=False),
             reglas_json=json.dumps(NEGOCIO["reglas"], ensure_ascii=False),
             rubro=NEGOCIO["rubro"], vendedor=NEGOCIO["vendedor"],
             canales_json=json.dumps(NEGOCIO["canales"], ensure_ascii=False),
             autonomia_default=NEGOCIO["autonomia_default"],
-            onboarding_hecho=True))
+            onboarding_hecho=True)
+        s.add(negocio)
+        s.commit()
+        s.refresh(negocio)
+
+        # Desde acá, todo lo que se cree pertenece a ESTE negocio. Sin esto los 11
+        # clientes nacerían sin dueño y no los vería nadie: el filtro por inquilino
+        # pide `business_id = X`, y NULL no es ningún X.
+        inquilino.fijar(negocio.id)
 
         por_nombre = {}
         for c in CLIENTES:

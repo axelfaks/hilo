@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react'
 import Marca from '../Marca.jsx'
 import { api, sesion } from '../api.js'
 
+const NEGOCIO_NUEVO = 'hilo_negocio_recien_configurado'
+
 /* Pantalla mínima hasta que llegue el diseño de Mars.
    Si todavía no hay ninguna cuenta, ofrece crear la primera en vez de pedir
    una que no existe: es el primer arranque de la app, no un olvido de contraseña. */
@@ -27,9 +29,18 @@ export default function Login({ onEntro, quiereCrear = false }) {
     e.preventDefault()
     setError(''); setYendo(true)
     try {
+      /* Si venís del onboarding, ese negocio ya quedó configurado esperándote.
+         Sin mandarlo, el registro te estrena uno vacío y todo lo que contestaste
+         en los dos pasos se pierde sin ningún error a la vista. */
+      let negocioId = null
+      try { negocioId = localStorage.getItem(NEGOCIO_NUEVO) } catch { /* da igual */ }
       const r = primera
-        ? await api.registro({ email, password: pass, nombre })
+        ? await api.registro({
+            email, password: pass, nombre,
+            ...(negocioId ? { negocio_id: Number(negocioId) } : {}),
+          })
         : await api.login({ email, password: pass })
+      try { localStorage.removeItem(NEGOCIO_NUEVO) } catch { /* da igual */ }
       sesion.guardar(r.token)
       onEntro(r.usuario)
     } catch (err) {

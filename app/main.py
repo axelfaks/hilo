@@ -4,20 +4,21 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlmodel import select
 
-from . import ai, auth, correo, pipeline as pl, simulador as sim
+from . import ai, auth, correo, inquilino, pipeline as pl, simulador as sim, whatsapp
 from .config import cargar as cargar_env
 
 cargar_env()
 from .db import crear_tablas, sesion
 from .logic import (CANALES, CANALES_CON_ASUNTO, CANALES_SALIENTES,
                     NIVELES_AUTONOMIA, es_cerrado, urgencia)
-from .models import Alias, Briefing, Commitment, Identity, Message, Usuario
+from .models import (Alias, Briefing, Business, Commitment, Credencial,
+                     Identity, Message, Usuario)
 
 app = FastAPI(title="Hilo")
 app.add_middleware(
@@ -42,7 +43,14 @@ def _arranque():
                 vacia = s.exec(select(Alias)).first() is None
             if vacia:
                 from seed import sembrar
-                sembrar()
+                # El `with` no es decorativo: sembrar() deja fijado el inquilino
+                # que acaba de crear, y sin esto ese valor quedaría pegado al
+                # contexto del server. ¿Consecuencia? El onboarding —que va sin
+                # sesión y decide por `inquilino.actual()`— creería que ya hay un
+                # negocio elegido y le pisaría la configuración al del arranque.
+                # Al salir del `with`, el ContextVar vuelve a como estaba.
+                with inquilino.usar(None):
+                    sembrar()
                 print("[hilo] base vacía: cargué los datos de demo")
         except Exception as e:
             # que no se caiga el arranque: sin datos la app igual levanta
@@ -55,14 +63,75 @@ def _arranque():
     if correo.vigilar(_entro_un_mail):
         print(f"[hilo] mirando la casilla {correo.estado()['casilla']}")
 
+    # WhatsApp no tiene vigía: entra por webhook, no hay a quién mirar. Pero
+    # conviene decirlo en el arranque igual, porque si no la única forma de saber
+    # si tomó el .env es mandar un mensaje y ver que no pasa nada.
+    wa = whatsapp.estado()
+    if wa["configurado"]:
+        print(f"[hilo] whatsapp listo desde {wa['numero'] or wa['phone_id']}"
+              f" (Graph {wa['version']})")
+        if not wa["firma_verificable"]:
+            print("[hilo] OJO: sin WA_APP_SECRET el webhook le cree a cualquiera")
+        if not wa["webhook_verificable"]:
+            print("[hilo] OJO: sin WA_VERIFY_TOKEN no vas a poder registrar el webhook")
+    else:
+        print("[hilo] whatsapp dormido: faltan WA_TOKEN o WA_PHONE_ID en el .env")
+
+
+def _negocio_de(canal: str, externo_id: str = ""):
+    """A qué negocio le corresponde un mensaje que llega de afuera.
+
+    Un webhook no trae sesión: nadie nos dice de quién es. Lo dice el número (o la
+    casilla) por el que entró, que está en la tabla `credencial`.
+
+    Mientras las credenciales sigan en el `.env` —o sea, mientras haya un solo
+    negocio— cae al primero. Es exactamente el comportamiento de antes, así que
+    nada se rompe al actualizar; el día que un cliente conecte su WhatsApp por
+    Embedded Signup, su credencial existe y esto lo encuentra solo.
+    """
+    with sesion() as s, inquilino.sin_filtro():
+        if externo_id:
+            c = s.exec(select(Credencial).where(
+                Credencial.canal == canal,
+                Credencial.externo_id == externo_id,
+                Credencial.activo == True)).first()          # noqa: E712
+            if c and c.business_id:
+                return c.business_id
+        b = s.exec(select(Business).order_by(Business.id)).first()
+        return b.id if b else None
+
 
 def _entro_un_mail(mail: dict):
-    """Un mail de verdad, tratado igual que cualquier otro mensaje."""
-    with sesion() as s:
+    """Un mail de verdad, tratado igual que cualquier otro mensaje.
+
+    Ojo: esto lo llama el hilo que vigila la casilla, que no es un request. Sin
+    ponerle el inquilino a mano, la ingesta correría sin filtro y el mensaje
+    quedaría sin dueño — invisible para todos.
+    """
+    negocio_id = _negocio_de("mail", (correo.estado().get("casilla") or ""))
+    with inquilino.usar(negocio_id), sesion() as s:
         r = pl.ingesta(s, "mail", mail["remitente"], mail["texto"],
                        html=mail.get("html", ""), asunto=mail.get("asunto", ""))
     quien = mail["remitente"]
     print(f"[hilo] mail de {quien}: "
+          + ("entró al hilo" if r.get("identificado") else "sin identificar"))
+
+
+def _entro_un_whatsapp(m: dict):
+    """Un WhatsApp de verdad, tratado igual que cualquier otro mensaje.
+
+    El webhook va abierto y no trae sesión: el negocio lo dice el número nuestro
+    por el que entró (`phone_id`), no el que escribe.
+    """
+    negocio_id = _negocio_de("whatsapp", m.get("phone_id", ""))
+    with inquilino.usar(negocio_id), sesion() as s:
+        r = pl.ingesta(s, "whatsapp", m["remitente"], m["texto"],
+                       externo_id=m.get("wamid", ""),
+                       remitente_nombre=m.get("nombre", ""))
+    if r.get("duplicado"):
+        return                                  # Meta reintentó, ya lo teníamos
+    quien = m.get("nombre") or m["remitente"]
+    print(f"[hilo] whatsapp de {quien}: "
           + ("entró al hilo" if r.get("identificado") else "sin identificar"))
 
 
@@ -73,7 +142,25 @@ def _entro_un_mail(mail: dict):
 
 # El onboarding va abierto porque es lo PRIMERO que hace alguien que llega:
 # contás qué vendés, ves tu Hilo armado y recién después ponés una contraseña.
-ABIERTAS = ("/api/auth/", "/api/cliente/", "/api/onboarding/")
+# Las rutas que NO piden cuenta. Van una por una, no por prefijo.
+#
+# Antes acá decía "/api/auth/" a secas, y eso abría TODO lo que colgara de ahí —
+# incluidos `GET /api/auth/usuarios`, que listaba los mails de todas las cuentas
+# sin pedir nada, y `POST /api/auth/usuarios`, que dejaba a cualquiera crearse un
+# usuario con el rol que quisiera y entrar. El docstring de ese endpoint decía
+# "pasa por la puerta, así que ya está logueado"; no era cierto.
+#
+# Regla para adelante: abrir rutas exactas, nunca un prefijo. Un prefijo abre
+# también lo que alguien agregue mañana debajo.
+ABIERTAS = (
+    "/api/auth/estado",        # ¿hace falta crear la primera cuenta?
+    "/api/auth/registro",      # darse de alta
+    "/api/auth/login",
+    "/api/auth/yo",            # valida el token por su cuenta
+    "/api/cliente/",           # la vista pública: el token ES la credencial
+    "/api/onboarding/",        # lo primero que hace alguien que llega
+    "/api/whatsapp/webhook",   # Meta le pega sin credenciales; lo protege la firma
+)
 
 
 @app.middleware("http")
@@ -90,7 +177,22 @@ async def puerta(request: Request, call_next):
         usuario = s.get(Usuario, uid) if uid else None
         if not usuario or not usuario.activo:
             return JSONResponse({"detail": "Necesitás entrar con tu cuenta"}, status_code=401)
-    return await call_next(request)
+        negocio_id = usuario.business_id
+
+    if negocio_id is None:
+        # Una cuenta sin negocio no puede ver NADA. Es el caso de un usuario que
+        # quedó de una versión anterior: mejor un error claro que dejarlo entrar
+        # a una app donde el filtro no aplica y ve todo.
+        return JSONResponse(
+            {"detail": "Tu cuenta no está asociada a ningún negocio. Escribinos."},
+            status_code=409)
+
+    # ACÁ se decide qué ve este request. De este `with` para adentro, todas las
+    # consultas de los modelos del inquilino salen filtradas solas: no hay que
+    # acordarse en cada endpoint, que es exactamente la clase de olvido que
+    # termina mostrándole los clientes de uno a otro.
+    with inquilino.usar(negocio_id):
+        return await call_next(request)
 
 
 @app.get("/api/auth/estado")
@@ -103,6 +205,7 @@ class RegistroIn(BaseModel):
     email: str
     password: str
     nombre: str = ""
+    negocio_id: int | None = None     # el que devolvió el onboarding, si vino de ahí
 
 
 @app.post("/api/auth/registro")
@@ -116,7 +219,21 @@ def auth_registro(body: RegistroIn):
     with sesion() as s:
         if auth.buscar_por_email(s, body.email):
             raise HTTPException(400, "Ya hay una cuenta con ese mail. Entrá con ella.")
-        u = auth.crear_usuario(s, body.email, body.password, body.nombre)
+
+        # Cada cuenta nueva estrena su propio negocio. Si viene del onboarding
+        # (`negocio_id`) se adopta el que quedó armado, pero SOLO si todavía no
+        # tiene dueño: si no, cualquiera que mandara el id de otro se metería
+        # adentro de su cuenta.
+        b = s.get(Business, body.negocio_id) if body.negocio_id else None
+        if b and s.exec(select(Usuario).where(Usuario.business_id == b.id)).first():
+            b = None
+        if not b:
+            b = Business(nombre=(body.nombre.strip() or body.email.split("@")[0]))
+            s.add(b)
+            s.commit()
+            s.refresh(b)
+
+        u = auth.crear_usuario(s, body.email, body.password, body.nombre, business_id=b.id)
         return {"token": auth.emitir_token(u.id), "usuario": auth.publico(u)}
 
 
@@ -163,14 +280,20 @@ def auth_invitar(body: InvitarIn):
     with sesion() as s:
         if auth.buscar_por_email(s, body.email):
             raise HTTPException(400, "Ya hay una cuenta con ese mail")
-        u = auth.crear_usuario(s, body.email, body.password, body.nombre, body.rol)
+        u = auth.crear_usuario(s, body.email, body.password, body.nombre, body.rol,
+                               business_id=inquilino.actual())
         return auth.publico(u)
 
 
 @app.get("/api/auth/usuarios")
 def auth_listar():
+    """El equipo de ESTE negocio. `Usuario` no se filtra solo (el login lo busca
+    por mail antes de saber el negocio), así que acá el filtro va a mano."""
     with sesion() as s:
-        return [auth.publico(u) for u in s.exec(select(Usuario))]
+        q = select(Usuario)
+        if inquilino.actual() is not None:
+            q = q.where(Usuario.business_id == inquilino.actual())
+        return [auth.publico(u) for u in s.exec(q)]
 
 
 # ------------------------------------------------------------------ serializar
@@ -324,7 +447,33 @@ def onboarding_guardar(body: OnboardingIn):
     if len(body.estados) < 2:
         raise HTTPException(400, "Hacen falta al menos dos etapas")
     with sesion() as s:
-        b = pl.negocio(s)
+        if inquilino.actual() is None:
+            # Sin sesión: alguien que llega por primera vez.
+            #
+            # Antes esto hacía pl.negocio(s), que traía el ÚNICO negocio que había
+            # y le pisaba la configuración. Con varias cuentas eso sería
+            # reconfigurarle el negocio a un cliente que está laburando.
+            #
+            # Se adopta un negocio SIN dueño y con el onboarding sin terminar —el
+            # de una instalación recién sembrada, o el de `empezar_de_cero.py`— y
+            # si no hay ninguno así, se crea uno nuevo. Las dos condiciones
+            # importan: sin la de "sin dueño" te metés en la cuenta de alguien, y
+            # sin la de "sin terminar" el segundo visitante le pisa la
+            # configuración al primero que todavía no se registró.
+            b = None
+            for candidato in s.exec(select(Business).where(
+                    Business.onboarding_hecho == False).order_by(Business.id)):   # noqa: E712
+                if not s.exec(select(Usuario).where(
+                        Usuario.business_id == candidato.id)).first():
+                    b = candidato
+                    break
+            if b is None:
+                b = Business()
+                s.add(b)
+                s.commit()
+                s.refresh(b)
+        else:
+            b = pl.negocio(s)
         b.nombre = body.nombre.strip()
         b.descripcion = body.descripcion
         b.rubro = body.rubro
@@ -336,7 +485,11 @@ def onboarding_guardar(body: OnboardingIn):
         b.onboarding_hecho = True
         s.add(b)
         s.commit()
-    return get_negocio()
+        negocio_id = b.id
+    # El front tiene que guardarse este id y mandarlo en /api/auth/registro:
+    # es lo que ata la configuración recién hecha con la cuenta que se va a crear.
+    with inquilino.usar(negocio_id):
+        return {**get_negocio(), "negocio_id": negocio_id}
 
 
 @app.post("/api/onboarding/reabrir")
@@ -373,6 +526,79 @@ def correo_revisar():
         _entro_un_mail(mail)
         entraron += 1
     return {"entraron": entraron, "estado": correo.estado()}
+
+
+# ----------------------------------------------------------------- whatsapp
+
+
+@app.get("/api/whatsapp/webhook")
+async def whatsapp_verificar(request: Request):
+    """El apretón de manos que hace Meta al registrar el webhook.
+
+    Devuelve el challenge EN TEXTO PLANO. Si sale envuelto en JSON —que es lo que
+    hace FastAPI si devolvés un string a secas— Meta lo rechaza y el webhook nunca
+    queda registrado. Es el error clásico y cuesta una tarde encontrarlo.
+    """
+    p = request.query_params
+    challenge = whatsapp.verificar(
+        p.get("hub.mode", ""), p.get("hub.verify_token", ""), p.get("hub.challenge", ""))
+    if challenge is None:
+        raise HTTPException(403, "Token de verificación incorrecto")
+    return PlainTextResponse(challenge)
+
+
+@app.post("/api/whatsapp/webhook")
+async def whatsapp_entrante(request: Request):
+    """Cada mensaje que llega. Entra por pl.ingesta(), como todo lo demás."""
+    crudo = await request.body()
+    if not whatsapp.firma_valida(crudo, request.headers.get("x-hub-signature-256", "")):
+        whatsapp._estado["firmas_rechazadas"] += 1
+        raise HTTPException(403, "Firma inválida")
+    try:
+        payload = json.loads(crudo.decode("utf-8") or "{}")
+    except ValueError:
+        payload = {}
+
+    entraron = 0
+    for m in whatsapp.procesar(payload):
+        try:
+            _entro_un_whatsapp(m)
+            entraron += 1
+        except Exception as e:                           # noqa: BLE001
+            # A propósito no se propaga. Si esto devuelve un 500, Meta reintenta,
+            # y si insiste sin éxito TE DA DE BAJA EL WEBHOOK: dejás de recibir
+            # mensajes de verdad y te enterás tarde. El error queda registrado y
+            # se ve en Configuración, que es donde hay que mirarlo.
+            whatsapp._estado["ultimo_error"] = f"No pude ingerir un mensaje: {e}"
+            print(f"[hilo] whatsapp: no pude ingerir un mensaje: {e}")
+    return {"ok": True, "entraron": entraron}
+
+
+@app.get("/api/whatsapp/estado")
+def whatsapp_estado():
+    """Para mirar desde Configuración si WhatsApp está andando de verdad."""
+    return whatsapp.estado()
+
+
+class ProbarWA(BaseModel):
+    numero: str
+    texto: str = "Probando Hilo. Si te llegó esto, el canal está andando."
+
+
+@app.post("/api/whatsapp/probar")
+def whatsapp_probar(body: ProbarWA):
+    """Manda un mensaje suelto, sin pasar por ninguna ficha.
+
+    Sirve para saber si el problema es la configuración o el hilo del cliente.
+    Ojo: si la app está en modo desarrollo, el número tiene que estar en la lista
+    de destinatarios permitidos de Meta.
+    """
+    if not whatsapp.configurado():
+        raise HTTPException(400, "WhatsApp no está configurado")
+    salio, error = whatsapp.enviar(body.numero, body.texto)
+    if not salio:
+        raise HTTPException(400, error or "No pude enviarlo")
+    return {"enviado": True, "estado": whatsapp.estado()}
 
 
 @app.get("/api/diagnostico-ia")
@@ -418,7 +644,8 @@ def cola():
         sin_id = []
         for m in s.exec(select(Message).where(Message.alias_id == None)):  # noqa: E711
             sug = s.get(Alias, m.sugerencia_alias_id) if m.sugerencia_alias_id else None
-            sin_id.append({"mensaje_id": m.id, "remitente": m.remitente, "canal": m.canal,
+            sin_id.append({"mensaje_id": m.id, "remitente": m.remitente,
+                           "remitente_nombre": m.remitente_nombre, "canal": m.canal,
                            "texto": m.texto, "creado": m.creado.isoformat(),
                            "html": m.html,
                            "sugerencia": ({"alias_id": sug.id, "nombre": sug.nombre,
@@ -765,16 +992,27 @@ def nuevo_desde_mensaje(mensaje_id: int, body: NuevoDesdeMensajeIn):
         # juan.rodriguez@… -> "Juan Rodriguez". Es un punto de partida editable.
         nombre = body.nombre.strip()
         if not nombre:
+            # El nombre del perfil del canal le gana a deducirlo de la dirección.
+            # En WhatsApp es lo único que hay: de un número no sale ningún nombre,
+            # y sin esto el cliente nuevo se llamaría «5491168961470».
+            nombre = (m.remitente_nombre or "").strip()
+        if not nombre:
             local = (m.remitente or "").split("@")[0]
             partes = [p for p in _re.split(r"[._\-]+", local) if p]
             nombre = " ".join(p.capitalize() for p in partes) or "Cliente nuevo"
 
         b = pl.negocio(s)
         etps = pl.etapas(b)
+        # El token va SIN filtro de inquilino a propósito. Es la credencial de una
+        # URL pública (/#/c/<token>) y /api/cliente/<token> lo busca en toda la
+        # base: si dos negocios llegaran a estrenar el mismo, el cliente de uno
+        # abriría la conversación del otro. Tiene que ser único en toda la app,
+        # no dentro de cada negocio.
         base = _re.sub(r"[^a-z0-9]+", "", nombre.lower())[:12] or "cliente"
         token = base
-        while s.exec(select(Alias).where(Alias.token == token)).first():
-            token = f"{base}{secrets.token_hex(2)}"
+        with inquilino.sin_filtro():
+            while s.exec(select(Alias).where(Alias.token == token)).first():
+                token = f"{base}{secrets.token_hex(2)}"
 
         a = Alias(nombre=nombre, contacto=m.remitente or "", rubro=b.rubro or "",
                   importancia=body.importancia,
@@ -850,31 +1088,45 @@ def limpiar_simulados(alias_id: int):
 
 
 # --------------------------------------------------- la vista del cliente (demo)
+# Estas rutas van abiertas: el token ES la credencial. Por eso el alias se busca
+# SIN filtro —no hay sesión que diga de qué negocio es— y apenas se sabe, se pone
+# el inquilino para que todo lo que venga después quede encerrado ahí.
+
+
+def _por_token(s, token: str) -> Alias:
+    with inquilino.sin_filtro():
+        a = s.exec(select(Alias).where(Alias.token == token)).first()
+    if not a:
+        raise HTTPException(404, "No existe esa conversación")
+    return a
+
 
 @app.get("/api/cliente/{token}")
 def cliente(token: str):
     """Lo que ve el cliente en su celular. Sin resumenes, sin IA visible."""
     with sesion() as s:
-        a = s.exec(select(Alias).where(Alias.token == token)).first()
-        if not a:
-            raise HTTPException(404, "No existe esa conversacion")
-        b = pl.negocio(s)
-        ids = {i.canal: i.valor for i in s.exec(select(Identity).where(Identity.alias_id == a.id))}
-        msgs = [m for m in pl.mensajes_de(s, a.id) if m.canal not in ("llamada", "presencial")]
-        return {"vendedor": b.nombre, "cliente": a.contacto or a.nombre,
-                "identidades": ids,
-                "mensajes": [{"mio": m.direccion == "entrante", "texto": m.texto,
-                              "canal": m.canal, "creado": m.creado.isoformat()} for m in msgs]}
+        a = _por_token(s, token)
+      # a partir de acá, solo el negocio dueño de esa conversación
+        with inquilino.usar(a.business_id):
+            b = pl.negocio(s)
+            ids = {i.canal: i.valor
+                   for i in s.exec(select(Identity).where(Identity.alias_id == a.id))}
+            msgs = [m for m in pl.mensajes_de(s, a.id)
+                    if m.canal not in ("llamada", "presencial")]
+            return {"vendedor": b.nombre, "cliente": a.contacto or a.nombre,
+                    "identidades": ids,
+                    "mensajes": [{"mio": m.direccion == "entrante", "texto": m.texto,
+                                  "canal": m.canal,
+                                  "creado": m.creado.isoformat()} for m in msgs]}
 
 
 @app.post("/api/cliente/{token}/simular")
 def cliente_simula(token: str):
     """El mismo trigger, pero desde la pantalla del celular."""
     with sesion() as s:
-        a = s.exec(select(Alias).where(Alias.token == token)).first()
-        if not a:
-            raise HTTPException(404, "No existe esa conversación")
-        return sim.hablar_como_cliente(s, a)
+        a = _por_token(s, token)
+        with inquilino.usar(a.business_id):
+            return sim.hablar_como_cliente(s, a)
 
 
 class ClienteEnviaIn(BaseModel):
@@ -885,20 +1137,31 @@ class ClienteEnviaIn(BaseModel):
 @app.post("/api/cliente/{token}/enviar")
 def cliente_envia(token: str, body: ClienteEnviaIn):
     with sesion() as s:
-        a = s.exec(select(Alias).where(Alias.token == token)).first()
-        if not a:
-            raise HTTPException(404, "No existe esa conversacion")
-        ident = s.exec(select(Identity).where(
-            Identity.alias_id == a.id, Identity.canal == body.canal)).first()
-        remitente = ident.valor if ident else f"{token}@demo"
-        return pl.ingesta(s, body.canal, remitente, body.texto)
+        a = _por_token(s, token)
+        with inquilino.usar(a.business_id):
+            ident = s.exec(select(Identity).where(
+                Identity.alias_id == a.id, Identity.canal == body.canal)).first()
+            remitente = ident.valor if ident else f"{token}@demo"
+            return pl.ingesta(s, body.canal, remitente, body.texto)
 
 
 @app.post("/api/reset")
 def reset():
-    """Vuelve a la posicion de demo. Sirve entre ensayo y ensayo, sin reiniciar nada."""
+    """Vuelve a la posición de demo. Sirve entre ensayo y ensayo, sin reiniciar nada.
+
+    OJO: `sembrar()` hace DROP TABLE. Con un solo negocio eso es "resetear la
+    demo"; con varios sería borrarle los clientes a TODOS. Por eso, en cuanto hay
+    más de una cuenta, esto se niega. No es una precaución teórica: este endpoint
+    quedó abierto a propósito para el hackatón.
+    """
+    with sesion() as s, inquilino.sin_filtro():
+        cuantos = len(list(s.exec(select(Business))))
+    if cuantos > 1:
+        raise HTTPException(
+            409, f"Hay {cuantos} negocios en esta base. Resetear los borraría a todos.")
     from seed import sembrar
-    sembrar()
+    with inquilino.usar(None):
+        sembrar()
     return {"ok": True}
 
 

@@ -1,0 +1,23 @@
+:root{--ground:#fbfbfa;--surface:#fff;--ink:#16211e;--muted:#5b6b67;--line:#e3e8e6;--accent:#0E6B5C}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:680px;margin:0 auto;padding:56px 24px 96px}
+.marca{display:flex;align-items:center;gap:10px;margin-bottom:40px;text-decoration:none;color:inherit}
+.marca span{font-weight:600;letter-spacing:-.01em}
+.punto{width:10px;height:10px;border-radius:50%;background:var(--accent)}
+h1{font-size:34px;line-height:1.15;letter-spacing:-.02em;margin:0 0 10px}
+.fecha{color:var(--muted);font-size:14px;margin:0 0 40px}
+h2{font-size:19px;letter-spacing:-.01em;margin:38px 0 10px;padding-top:22px;border-top:1px solid var(--line)}
+h2:first-of-type{border-top:0;padding-top:0}
+p,li{color:#2b3936}
+ul{padding-left:20px}
+li{margin:6px 0}
+a{color:var(--accent)}
+strong{font-weight:600}
+.caja{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;padding:16px 18px;margin:22px 0}
+.caja p{margin:0}
+.pie{margin-top:56px;padding-top:22px;border-top:1px solid var(--line);color:var(--muted);font-size:14px}
+@media (prefers-color-scheme:dark){
+  :root{--ground:#0f1513;--surface:#151c1a;--ink:#e8efec;--muted:#8fa39e;--line:#243130;--accent:#5FE0BE}
+  p,li{color:#cdd9d6}
+}

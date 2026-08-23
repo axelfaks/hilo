@@ -4,7 +4,7 @@ from datetime import datetime
 
 from sqlmodel import Session, select
 
-from . import ai, correo
+from . import ai, correo, inquilino, whatsapp
 from .logic import (
     CANALES, CANALES_SALIENTES, dias_de_contacto, pelota, por_canal, ritmo,
     temperatura, transcribir_hilo,
@@ -27,20 +27,56 @@ def despachar(s: Session, alias: Alias, canal: str, asunto: str, texto: str,
               cc: str = "", cco: str = "") -> tuple[bool, str]:
     """Saca el mensaje por el canal de verdad, si ese canal existe de verdad.
 
-    Hoy el único es el mail. Los demás siguen siendo simulados y devuelven
-    (False, "") sin ruido: no es un error que WhatsApp no salga, es que todavía
+    Hoy son dos: el mail y WhatsApp. Los demás siguen simulados y devuelven
+    (False, "") sin ruido: no es un error que Instagram no salga, es que todavía
     no está enchufado. Devuelve (salió de verdad, error).
     """
-    if canal != "mail" or not correo.configurado():
-        return False, ""
-    destino = direccion_de(s, alias.id, "mail")
-    if not destino:
-        return False, f"{alias.nombre} no tiene una dirección de mail cargada"
-    return correo.enviar(destino, asunto, texto, cc=cc, cco=cco)
+    if canal == "mail" and correo.configurado():
+        destino = direccion_de(s, alias.id, "mail")
+        if not destino:
+            return False, f"{alias.nombre} no tiene una dirección de mail cargada"
+        return correo.enviar(destino, asunto, texto, cc=cc, cco=cco)
+
+    if canal == "whatsapp" and whatsapp.configurado():
+        destino = direccion_de(s, alias.id, "whatsapp")
+        if not destino:
+            return False, f"{alias.nombre} no tiene un número de WhatsApp cargado"
+        # La ventana de 24 h se chequea ANTES de gastar el request. No es una
+        # optimización: adentro de la ventana responder es GRATIS, afuera hace
+        # falta una plantilla aprobada y se cobra. Que el vendedor lo sepa antes
+        # de apretar enviar vale más que el error críptico de Meta después.
+        ultimo = s.exec(
+            select(Message)
+            .where(Message.alias_id == alias.id,
+                   Message.canal == "whatsapp",
+                   Message.direccion == "entrante")
+            .order_by(Message.creado.desc())
+        ).first()
+        if not whatsapp.ventana_abierta(ultimo.creado if ultimo else None):
+            return False, (
+                f"Pasaron más de {whatsapp.VENTANA_HORAS} h desde el último mensaje "
+                f"de {alias.nombre}. Para reabrir la conversación hace falta una "
+                f"plantilla aprobada por Meta."
+            )
+        return whatsapp.enviar(destino, texto)
+
+    return False, ""
 
 
 
 def negocio(s: Session) -> Business:
+    """El negocio del inquilino actual.
+
+    `Business` no está en la lista de modelos que se filtran solos —se busca por
+    su propio id— así que acá el inquilino se lee a mano. Es el único lugar.
+    """
+    negocio_id = inquilino.actual()
+    if negocio_id is not None:
+        b = s.get(Business, negocio_id)
+        if b:
+            return b
+    # Sin inquilino puesto: el primero. Es lo que pasa en los scripts (seed,
+    # empezar_de_cero) y en una instalación de un solo negocio.
     b = s.exec(select(Business)).first()
     if not b:
         b = Business()
@@ -366,12 +402,24 @@ def actuar(s: Session, alias: Alias, canal_respuesta: str, simulado: bool = Fals
 # ------------------------------------------------------------------- ingesta
 
 def ingesta(s: Session, canal: str, remitente: str, texto: str, adjuntos: list | None = None,
-            simulado: bool = False, html: str = "", asunto: str = "") -> dict:
+            simulado: bool = False, html: str = "", asunto: str = "",
+            externo_id: str = "", remitente_nombre: str = "") -> dict:
     """La UNICA puerta por la que entra un mensaje. Un mail real, manana, entra por aca."""
+    # Idempotencia. Todos los webhooks reintentan cuando dudan de la respuesta, y
+    # Meta reintenta bastante: sin esto, el mismo mensaje aparece tres veces en el
+    # hilo, la IA lo resume tres veces y el vendedor deja de creerle a la ficha.
+    if externo_id:
+        repetido = s.exec(select(Message).where(Message.externo_id == externo_id)).first()
+        if repetido:
+            return {"duplicado": True, "mensaje_id": repetido.id,
+                    "alias_id": repetido.alias_id,
+                    "identificado": repetido.alias_id is not None}
+
     alias_id = resolver(s, canal, remitente)
     msg = Message(
         alias_id=alias_id, canal=canal, direccion="entrante", autor="cliente",
         texto=texto, remitente=remitente, simulado=simulado, html=html, asunto=asunto,
+        externo_id=externo_id, remitente_nombre=(remitente_nombre or "").strip()[:120],
         adjuntos_json=json.dumps(adjuntos or [], ensure_ascii=False),
     )
 

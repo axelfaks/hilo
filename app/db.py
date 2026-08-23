@@ -82,9 +82,50 @@ def asegurar_columnas():
         print("[hilo] columnas agregadas sin perder datos: " + ", ".join(agregadas))
 
 
+# Las tablas que pasaron a pertenecer a un negocio. Antes de que existiera el
+# multi-inquilino sus filas no tenían dueño; el ALTER las deja en NULL y una fila
+# en NULL no la ve NADIE (el filtro pide business_id = X). O sea: sin este
+# backfill, actualizar la app hace desaparecer todos los datos de la pantalla.
+TABLAS_DEL_INQUILINO = ("alias", "identity", "message", "briefing",
+                        "commitment", "credencial", "usuario")
+
+
+def asignar_negocio_a_lo_viejo():
+    """Le pone dueño a las filas que quedaron sin él al actualizar.
+
+    Va en SQL crudo a propósito: el filtro por inquilino se cuelga del ORM, y una
+    migración que corre por el ORM no vería justo las filas que tiene que
+    arreglar. Es idempotente: la segunda vez no hay ningún NULL y no hace nada.
+    """
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    if not insp.has_table("business"):
+        return
+    with engine.begin() as con:
+        primero = con.execute(text("SELECT id FROM business ORDER BY id LIMIT 1")).first()
+        if not primero:
+            return                                  # base vacía: no hay nada que migrar
+        negocio_id = primero[0]
+        tocadas = []
+        for tabla in TABLAS_DEL_INQUILINO:
+            if not insp.has_table(tabla):
+                continue
+            if "business_id" not in {c["name"] for c in insp.get_columns(tabla)}:
+                continue
+            r = con.execute(text(
+                f'UPDATE "{tabla}" SET business_id = :n WHERE business_id IS NULL'),
+                {"n": negocio_id})
+            if r.rowcount:
+                tocadas.append(f"{tabla}: {r.rowcount}")
+    if tocadas:
+        print(f"[hilo] filas viejas asignadas al negocio {negocio_id} -> " + ", ".join(tocadas))
+
+
 def crear_tablas():
     SQLModel.metadata.create_all(engine)
     asegurar_columnas()
+    asignar_negocio_a_lo_viejo()
 
 
 def sesion() -> Session:
