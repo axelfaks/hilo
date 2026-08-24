@@ -19,6 +19,7 @@ Y lo que hace que esto escale: **un solo bot para todos los clientes.** No hay u
 token por cliente que guardar, cifrar y rotar. Lo que guardamos por cuenta es a
 quién pertenece la conexión, que es un número, no un secreto.
 """
+import hmac
 import json
 import os
 import urllib.error
@@ -145,10 +146,21 @@ def link_de_vinculacion(codigo: str) -> str:
 
 
 def firma_valida(cabecera: str) -> bool:
+    """¿Este pedido lo mandó Telegram?
+
+    Falla CERRADO a propósito. Antes, sin secreto configurado devolvía True con
+    el argumento de que "no hay nada que proteger" — pero sí lo hay: la ruta
+    existe igual, y sin TG_TOKEN puesto (el estado exacto de un deploy recién
+    hecho) cualquiera que sepa la URL puede inventar mensajes de cualquier
+    cliente. Si no hay secreto, Telegram tampoco nos está mandando nada, así que
+    rechazar no rompe ningún caso real.
+
+    compare_digest y no ==: comparar con == filtra el secreto por el tiempo.
+    """
     esperado = secreto_webhook()
     if not esperado:
-        return True                     # sin token configurado no hay nada que proteger
-    return (cabecera or "") == esperado
+        return False
+    return hmac.compare_digest(cabecera or "", esperado)
 
 
 # ------------------------------------------------------------------ recibir
