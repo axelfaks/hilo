@@ -33,10 +33,21 @@ if not URL:
         cur.close()
 
 
-def _literal(valor) -> str | None:
-    """El default de una columna, escrito para SQL. Solo escalares simples."""
+def _literal(valor, dialecto: str = "") -> str | None:
+    """El default de una columna, escrito para SQL. Solo escalares simples.
+
+    El booleano se escribe distinto según el motor, y no es un detalle estético:
+    Postgres es estricto con los tipos y `BOOLEAN DEFAULT 1` no es "un uno que se
+    interpreta como verdadero", es un error de tipos que hace fallar el ALTER
+    ENTERO. Como el ALTER va dentro de un try, el arranque no se cae: la columna
+    simplemente no se agrega y la app queda pidiendo en cada SELECT una columna
+    que no existe. Eso fue exactamente un login rompiéndose con 500 en Render
+    mientras en SQLite andaba todo, porque SQLite sí acepta 1/0.
+    """
     if isinstance(valor, bool):
-        return "1" if valor else "0"
+        if dialecto == "sqlite":
+            return "1" if valor else "0"
+        return "TRUE" if valor else "FALSE"
     if isinstance(valor, (int, float)):
         return str(valor)
     if isinstance(valor, str):
@@ -69,7 +80,8 @@ def asegurar_columnas():
                 continue
             tipo = col.type.compile(engine.dialect)
             sql = f'ALTER TABLE "{tabla.name}" ADD COLUMN "{col.name}" {tipo}'
-            por_defecto = _literal(col.default.arg) if col.default is not None and not col.default.is_callable else None
+            por_defecto = (_literal(col.default.arg, engine.dialect.name)
+                           if col.default is not None and not col.default.is_callable else None)
             if por_defecto is not None:
                 sql += f" DEFAULT {por_defecto}"
             try:
@@ -77,7 +89,11 @@ def asegurar_columnas():
                     con.execute(text(sql))
                 agregadas.append(f"{tabla.name}.{col.name}")
             except Exception as e:                    # noqa: BLE001
-                print(f"[hilo] no pude agregar {tabla.name}.{col.name}: {e}")
+                # No se corta el arranque —una app que levanta se puede mirar—
+                # pero esto NO es un aviso menor: sin la columna, toda consulta
+                # a esa tabla revienta. Que se lea como lo que es.
+                print(f"[hilo] OJO: NO pude agregar {tabla.name}.{col.name} -> {e}\n"
+                      f"[hilo]      toda consulta a '{tabla.name}' va a fallar hasta que exista.")
     if agregadas:
         print("[hilo] columnas agregadas sin perder datos: " + ", ".join(agregadas))
 
