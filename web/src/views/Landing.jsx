@@ -168,18 +168,32 @@ export default function Landing() {
       el.style.transform = 'translate(' + (CH[i].x * k) + 'px,' + (CH[i].y * k) + 'px) rotate(' + CH[i].t + 'deg)'
     })
 
-    // las palabras que se descifran solas
+    /* --- las palabras que se descifran solas ---
+
+       El timer se guarda POR PALABRA, no en una lista suelta. Antes eran todos
+       juntos y no había forma de cortar uno: si alguien se iba a mitad del
+       descifrado y volvía, arrancaba un segundo intervalo sobre el mismo nodo y
+       los dos escribían encima del otro. Se ve como una palabra que tiembla y
+       no termina nunca. */
     const POOL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#$%&/*+-<>'
-    const relojes = []
+    const relojes = new Map()
+
+    const cortar = (el) => {
+      const id = relojes.get(el)
+      if (id) { window.clearInterval(id); relojes.delete(el) }
+    }
+
     const descifrar = (el) => {
+      if (!el) return
       const texto = el.getAttribute('data-word') || el.textContent
       if (reduce) { el.textContent = texto; return }
+      cortar(el)
       let f = 0
       const total = texto.length * 3 + 10
       const id = window.setInterval(() => {
         f++
+        if (f >= total) { cortar(el); el.textContent = texto; return }
         const visto = Math.floor((f / total) * texto.length)
-        if (f >= total) { window.clearInterval(id); el.textContent = texto; return }
         let out = ''
         for (let i = 0; i < texto.length; i++) {
           const c = texto.charAt(i)
@@ -187,24 +201,53 @@ export default function Landing() {
         }
         el.textContent = out
       }, 45)
-      relojes.push(id)
+      relojes.set(el, id)
     }
 
-    const filas = qa('.row')
+    /* Rebobinar: deja la palabra escrita, no vacía. Pasa fuera de pantalla, así
+       que no se ve — pero si se vaciara, la línea se acomodaría sola y al volver
+       el texto saltaría de lugar. */
+    const rebobinar = (el) => {
+      if (!el) return
+      cortar(el)
+      el.textContent = el.getAttribute('data-word') || el.textContent
+    }
+
+    /* --- lo que aparece al entrar en pantalla ---
+
+       Un solo observador para todo: las filas de la línea de tiempo, los títulos
+       de sección, los chips, las funciones y los pasos. Cada uno se pinta
+       distinto en el CSS; acá arriba la regla es una sola.
+
+       **Prende y apaga**, y ahí está el truco: se enciende cuando se ve buena
+       parte del elemento (40%), pero solo se rebobina cuando salió ENTERO de la
+       pantalla. Esa asimetría es a propósito. Si prendiera y apagara en el mismo
+       punto, un scroll tembloroso justo en el borde lo haría parpadear a 60 fps.
+
+       Que se repita es la diferencia con la versión anterior, que animaba una
+       vez y listo. La gente sube y baja mientras decide, y al volver se
+       encontraba con una página apagada — que es peor que no haberla animado
+       nunca, porque ya sabía que ahí había algo. */
+    const UMBRAL = 0.4
+    const revelables = qa('.row, .section-head, .chips .chip, .feat, .step')
     let io = null
-    if ('IntersectionObserver' in window) {
+    if ('IntersectionObserver' in window && !reduce) {
+      cont.classList.add('anima')          // recién acá se permite esconder algo
       io = new IntersectionObserver((entradas) => {
         entradas.forEach((e) => {
-          if (!e.isIntersecting) return
-          e.target.classList.add('in')
-          const w = e.target.querySelector('.scr')
-          if (w && !w.dataset.done) { w.dataset.done = '1'; descifrar(w) }
-          io.unobserve(e.target)
+          const el = e.target
+          const puesto = el.classList.contains('visto')
+          if (e.isIntersecting && e.intersectionRatio >= UMBRAL - 0.05) {
+            if (puesto) return
+            el.classList.add('visto')
+            descifrar(el.querySelector('.scr'))
+          } else if (!e.isIntersecting && puesto) {
+            el.classList.remove('visto')
+            rebobinar(el.querySelector('.scr'))
+          }
         })
-      }, { threshold: 0.55 })
-      filas.forEach((r) => io.observe(r))
-    } else {
-      filas.forEach((r) => r.classList.add('in'))
+      }, { threshold: [0, UMBRAL] })
+      revelables.forEach((el) => io.observe(el))
     }
 
     let esperando = false
@@ -224,7 +267,7 @@ export default function Landing() {
     return () => {
       window.removeEventListener('scroll', alScrollear)
       window.removeEventListener('resize', alRedimensionar)
-      relojes.forEach(window.clearInterval)
+      relojes.forEach(window.clearInterval)   // Map: (valor, clave) -> el id primero
       if (io) io.disconnect()
       tiles.forEach((el) => el.remove())
     }
@@ -285,7 +328,11 @@ export default function Landing() {
             <p className="lead">Hilo recibe y contesta por todos los canales por los que te escriben tus clientes.</p>
           </div>
           <div className="stage" aria-hidden="true"><div className="blob" /></div>
-          <div className="chips">{CANALES.map(c => <span className="chip" key={c}>{c}</span>)}</div>
+          <div className="chips">
+            {CANALES.map((c, i) => (
+              <span className="chip" key={c} style={{ '--i': i }}>{c}</span>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -302,7 +349,7 @@ export default function Landing() {
                 {lado === 'left' && (
                   <div className="half"><p className="copy">{antes}<span className="scr" data-word={palabra}>{palabra}</span>{despues}</p></div>
                 )}
-                <div className="badge">{emoji}</div>
+                <div className="nodo">{emoji}</div>
                 {lado === 'right' && (
                   <div className="half"><p className="copy">{antes}<span className="scr" data-word={palabra}>{palabra}</span>{despues}</p></div>
                 )}
@@ -320,8 +367,8 @@ export default function Landing() {
             <p className="lead">Lo que hace Hilo mientras vos atendés el negocio.</p>
           </div>
           <div className="grid">
-            {FUNCIONES.map(([d, titulo, bajada, extra]) => (
-              <div className="feat" key={titulo}>
+            {FUNCIONES.map(([d, titulo, bajada, extra], i) => (
+              <div className="feat" key={titulo} style={{ '--i': i }}>
                 <span className="ic">
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                     strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
@@ -342,8 +389,8 @@ export default function Landing() {
             <p className="lead">Tres pasos y ya tenés el hilo entero de cada cliente.</p>
           </div>
           <div className="steps">
-            {PASOS.map(([n, titulo, bajada]) => (
-              <div className="step" key={n}>
+            {PASOS.map(([n, titulo, bajada], i) => (
+              <div className="step" key={n} style={{ '--i': i }}>
                 <span className="n">{n}</span>
                 <h3>{titulo}</h3>
                 <p>{bajada}</p>

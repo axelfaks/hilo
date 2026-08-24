@@ -1,8 +1,20 @@
 __pycache__/
 *.pyc
-hilo.db
 web/node_modules/
+
+# La base y su diario. El -wal no es un archivo auxiliar: son los datos que
+# todavía no se volcaron al .db. Subirlo es subir la base.
+hilo.db
+hilo.db-wal
+hilo.db-shm
+hilo.db.*
+
+# Copias de seguridad de cualquier archivo. Nunca al repo.
+*.bak
+
+# El .env y sus copias tienen las claves adentro.
 .env
+.env.*backup
 .hilo_secreto
 
 # web/dist SÍ se sube: es lo que sirve el hosting como frontend.

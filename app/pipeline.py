@@ -4,12 +4,13 @@ from datetime import datetime
 
 from sqlmodel import Session, select
 
-from . import ai, correo, inquilino, whatsapp
+from . import ai, correo, inquilino, secreto, telegram as tg, whatsapp
 from .logic import (
     CANALES, CANALES_SALIENTES, dias_de_contacto, pelota, por_canal, ritmo,
     temperatura, transcribir_hilo,
 )
-from .models import Alias, Briefing, Business, Commitment, Identity, Message
+from .models import (Alias, Briefing, Business, Commitment, Credencial, Identity,
+                     Message)
 
 
 # ------------------------------------------------------------------ utilidades
@@ -21,6 +22,25 @@ def direccion_de(s: Session, alias_id: int, canal: str = "mail") -> str:
         select(Identity).where(Identity.alias_id == alias_id, Identity.canal == canal)
     ).first()
     return (fila.valor if fila else "").strip()
+
+
+def cuenta_whatsapp(s: Session) -> dict | None:
+    """Las llaves de WhatsApp de ESTE negocio, de la tabla `credencial`.
+
+    La credencial guardada gana; el `.env` queda como fallback de la instalación de
+    un solo negocio (que es la de hoy). La consulta ya sale filtrada por inquilino
+    sola, así que no hay forma de traerse la credencial de otro por descuido.
+    """
+    cred = s.exec(select(Credencial).where(
+        Credencial.canal == "whatsapp",
+        Credencial.activo == True)).first()                       # noqa: E712
+    if not cred or not cred.externo_id:
+        return None
+    datos = json.loads(secreto.descifrar(cred.datos_json) or "{}")
+    if not datos.get("token"):
+        return None
+    return {"token": datos["token"], "phone_id": cred.externo_id,
+            "version": datos.get("version", "")}
 
 
 def despachar(s: Session, alias: Alias, canal: str, asunto: str, texto: str,
@@ -37,7 +57,11 @@ def despachar(s: Session, alias: Alias, canal: str, asunto: str, texto: str,
             return False, f"{alias.nombre} no tiene una dirección de mail cargada"
         return correo.enviar(destino, asunto, texto, cc=cc, cco=cco)
 
-    if canal == "whatsapp" and whatsapp.configurado():
+    if canal == "whatsapp":
+        # La cuenta del cliente si conectó la suya; si no, la del .env.
+        cuenta = cuenta_whatsapp(s)
+        if not (cuenta or whatsapp.configurado()):
+            return False, ""
         destino = direccion_de(s, alias.id, "whatsapp")
         if not destino:
             return False, f"{alias.nombre} no tiene un número de WhatsApp cargado"
@@ -58,7 +82,20 @@ def despachar(s: Session, alias: Alias, canal: str, asunto: str, texto: str,
                 f"de {alias.nombre}. Para reabrir la conversación hace falta una "
                 f"plantilla aprobada por Meta."
             )
-        return whatsapp.enviar(destino, texto)
+        return whatsapp.enviar(destino, texto, cuenta=cuenta)
+
+    if canal == "telegram" and tg.configurado():
+        destino = direccion_de(s, alias.id, "telegram")
+        if not destino:
+            return False, f"{alias.nombre} no tiene un Telegram cargado"
+        cred = s.exec(select(Credencial).where(
+            Credencial.canal == "telegram",
+            Credencial.activo == True)).first()                        # noqa: E712
+        if not cred:
+            return False, "Todavía no conectaste Telegram. Andá a Canales."
+        # Con `referencia` sale como el vendedor (Telegram Business); sin ella,
+        # sale como el bot. Es el mismo envío y una sola diferencia.
+        return tg.enviar(destino, texto, conexion_id=cred.referencia or "")
 
     return False, ""
 

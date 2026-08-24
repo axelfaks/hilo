@@ -37,6 +37,8 @@
 
   --pad:clamp(20px,5vw,48px);
   --maxw:1120px;
+  --alto-barra:66px;      /* la barra de arriba. El hero le resta esto al alto de
+                             la ventana para que la primera pantalla entre entera */
 }
 .lp, .lp *{box-sizing:border-box}
 .lp{
@@ -68,7 +70,7 @@
   transition:border-color .2s ease;
 }
 .lp .nav.is-stuck{border-bottom-color:var(--line)}
-.lp .nav-in{display:flex;align-items:center;justify-content:space-between;gap:18px;height:66px;max-width:var(--maxw);margin:0 auto;padding-inline:var(--pad)}
+.lp .nav-in{display:flex;align-items:center;justify-content:space-between;gap:18px;height:var(--alto-barra);max-width:var(--maxw);margin:0 auto;padding-inline:var(--pad)}
 .lp .brand{display:flex;align-items:center;gap:10px;font-family:var(--display);font-weight:800;font-size:20px;letter-spacing:-.035em}
 .lp .mark{width:28px;height:28px;border-radius:9px;background:var(--accent);display:grid;place-items:center;flex:0 0 28px}
 .lp .mark svg{display:block}
@@ -90,7 +92,31 @@
 .lp .btn-quiet{color:var(--muted);font-size:15px;font-weight:500}
 .lp .btn-quiet:hover{color:var(--ink)}
 .lp /* ---------- hero ---------- */
-.hero{position:relative;padding:clamp(64px,11vh,120px) 0 clamp(60px,10vh,104px);overflow:hidden}
+/* La primera pantalla tiene que entrar ENTERA, con la barra incluida.
+
+   Antes el hero se armaba con padding suelto y el resultado dependía del alto de
+   la ventana: en una pantalla de notebook el botón quedaba abajo del pliegue, y
+   justo el pliegue es donde se decide si alguien sigue leyendo. Ahora ocupa
+   exactamente lo que queda después de la barra (66 px) y su contenido va
+   centrado en ese espacio, así que sobra o falta aire, pero nunca se corta.
+
+   `svh` y no `vh`: en el celular, `vh` cuenta la ventana SIN la barra del
+   navegador, que aparece y desaparece al scrollear — con `vh` la primera pantalla
+   se pasa de largo justo en el teléfono, que es donde más duele. */
+.hero{position:relative;overflow:hidden;
+  min-height:calc(100svh - var(--alto-barra));
+  display:flex;align-items:center;
+  padding:clamp(28px,5vh,72px) 0 clamp(32px,6vh,80px)}
+.lp .hero > .wrap{width:100%}
+@supports not (height:100svh){ .lp .hero{min-height:calc(100vh - var(--alto-barra))} }
+
+/* En una notebook el ancho sobra y lo que falta es alto: el título medido en
+   `vw` se agranda justo cuando menos lugar hay. En pantallas bajas achica un
+   punto y el botón deja de rozar el borde. */
+@media (max-height:780px){
+  .lp .hero h1{font-size:clamp(34px,4.6vw,54px)}
+  .lp .hero-stack{gap:18px}
+}
 .lp .eyebrow{
   font-family:var(--mono);font-weight:500;font-size:12.5px;letter-spacing:.1em;text-transform:uppercase;
   color:var(--muted);
@@ -128,11 +154,24 @@
 }
 .lp .tile svg{display:block}
 .lp .chips{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:40px}
+/* OJO con los nombres de clase acá adentro.
+   `design.css` —el sistema de la app— se carga en la misma página y tiene reglas
+   SIN scope: `.chip`, `.badge`, `.btn`, `.grid`, `.wrap`. Todo lo de la landing
+   va bajo `.lp`, así que gana en especificidad… pero lo que la landing NO
+   declara, se hereda igual. Los `::before` son los que se ven: el `.badge` de la
+   app le pintaba un ● negro adentro del ícono de la línea de tiempo, arriba del
+   emoji. Por eso ese ícono ahora se llama `.nodo`, y el puntito del chip está
+   declarado acá abajo a propósito, no de prestado.
+
+   Regla para lo que venga: **la landing no reusa nombres de `design.css`.** */
 .lp .chip{
+  display:inline-flex;align-items:center;gap:7px;
   background:var(--surface);border:1px solid var(--line);
   border-radius:999px;padding:10px 16px;
   font-weight:600;font-size:15px;letter-spacing:-.012em;
 }
+.lp .chip::before{content:"";width:7px;height:7px;flex:none;border-radius:50%;
+  background:currentColor;opacity:.5}
 .lp /* ---------- spine (privacidad) ---------- */
 .spine{position:relative;max-width:860px;margin:56px auto 0}
 .lp .spine::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;margin-left:-.5px;background:var(--line)}
@@ -140,24 +179,34 @@
 .lp .row .half{flex:1}
 .lp .row .copy{
   font-size:clamp(17px,2vw,21px);line-height:1.45;letter-spacing:-.02em;max-width:360px;
-  opacity:0;transform:translateY(18px);transition:opacity .55s ease,transform .55s ease;
 }
-.lp .row.in .copy{opacity:1;transform:none}
 .lp .row.left .copy{margin-left:auto;text-align:right;padding-right:40px}
 .lp .row.right .copy{margin-right:auto;text-align:left;padding-left:40px}
-.lp .row .badge{
+.lp .row .nodo{
   width:52px;height:52px;flex:0 0 52px;border-radius:16px;
   background:var(--surface-2);border:1px solid var(--line);
   box-shadow:var(--shadow-soft);
   display:grid;place-items:center;font-size:24px;z-index:1;
-  opacity:0;transform:scale(.7);transition:opacity .4s ease,transform .45s cubic-bezier(.2,1.5,.4,1);
 }
-.lp .row.in .badge{opacity:1;transform:none}
 .lp .scr{font-family:var(--mono);font-weight:700;color:var(--accent)}
-@media(max-width:680px){.lp .spine::before{left:26px}
-.lp .row{min-height:150px}
-.lp .row.left .half:first-child, .lp .row.right .half:first-child{display:none}
-.lp .row .copy{text-align:left!important;margin:0!important;padding:0 0 0 22px!important}}
+/* En el celular la línea de tiempo deja de tener dos lados: el ícono va pegado a
+   la izquierda y el texto siempre a su derecha.
+
+   Lo que hay que esconder es **la mitad vacía**, y esa mitad no está siempre en
+   el mismo lugar: en una fila `left` el vacío es el ÚLTIMO hijo, y en una `right`
+   es el primero. La regla vieja escondía el primero en las dos, así que a las
+   filas `left` les borraba justo el texto: se veían el candado y la tarjeta sin
+   una palabra al lado. */
+@media(max-width:680px){
+  .lp .spine::before{left:26px}
+  .lp .row{min-height:118px;gap:0}
+  .lp .row.left .half:last-child,
+  .lp .row.right .half:first-child{display:none}
+  /* el ícono primero, sin importar de qué lado venga en el HTML */
+  .lp .row .nodo{order:-1}
+  .lp .row .copy{text-align:left!important;margin:0!important;
+    padding:0 0 0 22px!important;max-width:none}
+}
 .lp /* ---------- funciones ---------- */
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:44px 40px;margin-top:60px}
 .lp .feat{display:flex;flex-direction:column;gap:9px;text-align:center;align-items:center}
@@ -181,8 +230,85 @@
 .lp .foot nav{display:flex;gap:24px;flex-wrap:wrap}
 .lp .foot a{color:var(--muted);font-size:15px}
 .lp .foot a:hover{color:var(--ink)}
+/* ===========================================================================
+   APARECER AL ENTRAR EN PANTALLA
+
+   Una sola mecánica para toda la página: el JS le pone `.visto` a lo que está a
+   la vista y se lo saca cuando salió entero. Cada cosa se pinta distinto acá
+   abajo, pero la regla que decide cuándo es una sola.
+
+   Tres decisiones que conviene no revertir:
+
+   · **Se repite.** La primera versión animaba una vez y listo. Pero la gente
+     sube y baja mientras decide, y al volver encontraba una página apagada —
+     que es peor que no haberla animado nunca, porque ya sabía que ahí había
+     algo. Ahora prende al entrar y rebobina al salir del todo.
+
+   · **La demora vive en el estado encendido.** `transition-delay` se lee del
+     estado al que se va. Puesta en `.visto`, la entrada escalona y la salida es
+     instantánea: si alguien vuelve rápido, no se encuentra con tarjetas que
+     todavía se están yendo.
+
+   · **Todo lo escondido cuelga de `.lp.anima`, que la pone el JS.** Si el JS no
+     corre, o el sistema pide menos movimiento, la página se ve entera y quieta
+     en lugar de quedar en blanco. Una animación que no arranca tiene que
+     degradar a «sin animación», nunca a «sin contenido».
+
+   Y el volumen: la caída de los canales al blob es EL momento de la página.
+   Todo lo de acá abajo es un fundido corto con escalonado — presencia, no
+   espectáculo. Si compitiera, la página tendría dos protagonistas y ninguno.
+   =========================================================================== */
+.lp.anima .row .copy{opacity:0;transform:translateY(18px);
+  transition:opacity .55s ease,transform .55s ease}
+.lp.anima .row.visto .copy{opacity:1;transform:none}
+.lp.anima .row .nodo{opacity:0;transform:scale(.7);
+  transition:opacity .4s ease,transform .45s cubic-bezier(.2,1.5,.4,1)}
+.lp.anima .row.visto .nodo{opacity:1;transform:none}
+
+.lp.anima .section-head,
+.lp.anima .chips .chip,
+.lp.anima .feat,
+.lp.anima .step{
+  opacity:0;transform:translateY(18px);
+  transition:opacity .5s ease,transform .55s cubic-bezier(.2,.8,.3,1);
+  transition-delay:0s;
+}
+.lp.anima .section-head.visto,
+.lp.anima .chips .chip.visto,
+.lp.anima .feat.visto,
+.lp.anima .step.visto{opacity:1;transform:none}
+
+/* El escalonado. `--i` es el índice y lo pone el JSX, así que el CSS no tiene
+   que saber cuántos hay ni en qué orden vienen. */
+.lp.anima .chips .chip.visto{transition-delay:calc(var(--i,0) * 45ms)}
+.lp.anima .feat.visto{transition-delay:calc(var(--i,0) * 55ms)}
+/* Los pasos van más lento a propósito: son 01, 02 y 03, y el orden ES el
+   mensaje. Un escalonado que no se llega a percibir sería decoración; a 110 ms
+   se lee como una secuencia, que es lo que la sección dice con palabras. */
+.lp.anima .step.visto{transition-delay:calc(var(--i,0) * 110ms)}
+
+/* El ícono entra un pelo después de su tarjeta, con el mismo rebote que el nodo
+   de la línea de tiempo. Es a propósito que sea el mismo gesto y no uno nuevo:
+   dos rebotes distintos en la misma página se leen como dos manos distintas. */
+.lp.anima .feat .ic{transform:scale(.72);
+  transition:transform .5s cubic-bezier(.2,1.45,.4,1);transition-delay:0s}
+.lp.anima .feat.visto .ic{transform:none;transition-delay:calc(var(--i,0) * 55ms + .12s)}
+
+/* La rayita abajo del número del paso se dibuja sola, de izquierda a derecha.
+   Es un hilo corto — que es literalmente de lo que se trata el producto — y va
+   adentro de cada tarjeta a propósito: una línea ENTRE las tarjetas se rompería
+   sola cuando la grilla pasa de tres columnas a dos. */
+.lp .step .n::after{
+  content:"";display:block;width:28px;height:2px;margin-top:9px;
+  background:var(--accent);border-radius:2px;
+}
+.lp.anima .step .n::after{transform:scaleX(0);transform-origin:left center;
+  transition:transform .5s cubic-bezier(.2,.8,.3,1);transition-delay:0s}
+.lp.anima .step.visto .n::after{transform:none;
+  transition-delay:calc(var(--i,0) * 110ms + .2s)}
+
 @media (prefers-reduced-motion:reduce){.lp, .lp *{animation:none!important;transition-duration:.01ms!important}
-.lp .row .copy, .lp .row .badge{opacity:1;transform:none}}
+.lp .row .copy, .lp .row .nodo{opacity:1;transform:none}}
 
 /* ---------------------------------------------------------------------------
    El acento: el mismo teal del logo y de la app. La landing venía en índigo y

@@ -1,5 +1,7 @@
 import json
 import os
+import secrets
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -10,7 +12,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlmodel import select
 
-from . import ai, auth, correo, inquilino, pipeline as pl, simulador as sim, whatsapp
+from . import (ai, auth, cobros, correo, inquilino, mercadopago as mp,
+               pipeline as pl, planes, root, secreto, simulador as sim,
+               telegram as tg, uso, vinculos, whatsapp)
 from .config import cargar as cargar_env
 
 cargar_env()
@@ -70,12 +74,41 @@ def _arranque():
     if wa["configurado"]:
         print(f"[hilo] whatsapp listo desde {wa['numero'] or wa['phone_id']}"
               f" (Graph {wa['version']})")
+        # El token temporal de Meta dura 24 h y cuando vence NO avisa: los mensajes
+        # dejan de salir y uno se entera en la demo. Preguntar cuesta una llamada
+        # por arranque; el silencio cuesta una demo. En un hilo aparte para que un
+        # Meta lento no demore el arranque del server.
+        def _mirar_el_token():
+            vivo, detalle = whatsapp.probar_token()
+            print(f"[hilo] whatsapp: el token ANDA ({detalle})" if vivo else
+                  f"[hilo] OJO: el token de WhatsApp no sirve -> {detalle}\n"
+                  f"[hilo]      generá uno permanente en Meta Business ->"
+                  f" Usuarios del sistema, y ponelo en WA_TOKEN")
+        threading.Thread(target=_mirar_el_token, daemon=True).start()
         if not wa["firma_verificable"]:
             print("[hilo] OJO: sin WA_APP_SECRET el webhook le cree a cualquiera")
         if not wa["webhook_verificable"]:
             print("[hilo] OJO: sin WA_VERIFY_TOKEN no vas a poder registrar el webhook")
     else:
         print("[hilo] whatsapp dormido: faltan WA_TOKEN o WA_PHONE_ID en el .env")
+
+    # Telegram: hay que DECIRLE a dónde mandar los mensajes. Sin esto, con el
+    # token puesto y todo, no llega nada y no hay ningún error que lo explique.
+    # Se hace en cada arranque a propósito: es idempotente y así la URL siempre
+    # apunta a donde está corriendo la app ahora.
+    if tg.configurado():
+        publica = (os.environ.get("HILO_URL") or "").strip()
+        if publica:
+            def _enganchar_telegram():
+                salio, detalle = tg.registrar_webhook(publica)
+                print(f"[hilo] telegram: webhook en {detalle}" if salio else
+                      f"[hilo] OJO: no pude registrar el webhook de Telegram -> {detalle}")
+            threading.Thread(target=_enganchar_telegram, daemon=True).start()
+        else:
+            print("[hilo] telegram: falta HILO_URL en el .env, así que no registro el "
+                  "webhook. En local levantá el túnel y poné esa URL ahí.")
+    else:
+        print("[hilo] telegram dormido: falta TG_TOKEN en el .env")
 
 
 def _negocio_de(canal: str, externo_id: str = ""):
@@ -160,7 +193,41 @@ ABIERTAS = (
     "/api/cliente/",           # la vista pública: el token ES la credencial
     "/api/onboarding/",        # lo primero que hace alguien que llega
     "/api/whatsapp/webhook",   # Meta le pega sin credenciales; lo protege la firma
+    "/api/pagos/webhook",      # Mercado Pago tampoco trae sesión; ver el endpoint
+    "/api/telegram/webhook",   # Telegram tampoco; lo protege el secret token
 )
+
+# Las únicas rutas que sigue viendo una cuenta CORTADA por falta de pago. Son las
+# justas para poder pagar y para que la app dibuje su marco: si al que le cortaron
+# no le queda ni la pantalla donde poner la tarjeta, no hay forma de que vuelva.
+SIN_PAGAR = (
+    "/api/plan",
+    "/api/plan/suscribir",
+    "/api/plan/cancelar",
+    "/api/negocio",
+)
+
+
+def _puede_sin_pagar(ruta: str) -> bool:
+    """Rutas exactas, salvo lo que cuelga de `/api/pagos/`.
+
+    La regla de la casa es no abrir por prefijo, y sigue valiendo para `ABIERTAS`,
+    que saltea la sesión entera. Acá el prefijo es otra cosa: esto corre DESPUÉS
+    de identificar al usuario y solo decide si le cobramos o no la entrada. Todo
+    lo que cuelgue de `/api/pagos/` es, por definición, para poder pagar.
+    """
+    # `/api/root` tampoco paga peaje: el back-office no es parte del producto que
+    # el cliente compra, así que a un usuario común le tiene que contestar «esto
+    # no es para vos» (403) y no «pagá» (402), que sería una respuesta rarísima.
+    # Quién entra ahí lo decide `es_root`, en `root.py`.
+    return (ruta in SIN_PAGAR or ruta.startswith("/api/pagos/")
+            or ruta.startswith("/api/root"))
+
+
+# El header con el que una cuenta root mira la app como si fuera un cliente.
+# No da permiso —lo da `es_root`— sino que dice a cuál. Para cualquier otro
+# usuario se ignora, y por eso mandarlo a mano no sirve de nada.
+VER_COMO = "x-hilo-negocio"
 
 
 @app.middleware("http")
@@ -168,8 +235,14 @@ async def puerta(request: Request, call_next):
     ruta = request.url.path
     if not ruta.startswith("/api/") or ruta.startswith(ABIERTAS) or request.method == "OPTIONS":
         return await call_next(request)
+    request.state.uid = None
+    request.state.es_root = False
     with sesion() as s:
         if not auth.auth_encendida(s):
+            # Instalación sin dueño: la app entera está abierta a propósito
+            # (`AvisoSinCuenta` lo grita en pantalla). Si TODO está abierto, el
+            # back-office también: esconderlo acá sería teatro, no seguridad.
+            request.state.es_root = True
             return await call_next(request)
         cabecera = request.headers.get("authorization", "")
         token = cabecera[7:] if cabecera.lower().startswith("bearer ") else ""
@@ -177,15 +250,61 @@ async def puerta(request: Request, call_next):
         usuario = s.get(Usuario, uid) if uid else None
         if not usuario or not usuario.activo:
             return JSONResponse({"detail": "Necesitás entrar con tu cuenta"}, status_code=401)
+        request.state.uid = usuario.id
+        request.state.es_root = bool(usuario.es_root)
         negocio_id = usuario.business_id
 
-    if negocio_id is None:
-        # Una cuenta sin negocio no puede ver NADA. Es el caso de un usuario que
-        # quedó de una versión anterior: mejor un error claro que dejarlo entrar
-        # a una app donde el filtro no aplica y ve todo.
-        return JSONResponse(
-            {"detail": "Tu cuenta no está asociada a ningún negocio. Escribinos."},
-            status_code=409)
+        # "Ver como": el back-office pide una cuenta ajena y la ve entera, con las
+        # pantallas de verdad y sin pedirle una captura a nadie. Solo root.
+        pedida = request.headers.get(VER_COMO, "").strip()
+        if pedida and usuario.es_root:
+            try:
+                negocio_id = int(pedida)
+            except ValueError:
+                pass
+
+        # Última visita. Se escribe como mucho una vez cada diez minutos: una
+        # escritura por request es, en SQLite y con el vigía del correo al lado,
+        # la receta exacta del "database is locked".
+        ahora = datetime.now()
+        if not usuario.ultimo_acceso or (ahora - usuario.ultimo_acceso).total_seconds() > 600:
+            usuario.ultimo_acceso = ahora
+            s.add(usuario)
+            s.commit()
+
+        if negocio_id is None:
+            # Una cuenta sin negocio no puede ver NADA. Es el caso de un usuario
+            # que quedó de una versión anterior: mejor un error claro que dejarlo
+            # entrar a una app donde el filtro no aplica y ve todo. La excepción
+            # es el back-office, que justamente no mira ningún negocio en
+            # particular.
+            if not (usuario.es_root and ruta.startswith("/api/root")):
+                return JSONResponse(
+                    {"detail": "Tu cuenta no está asociada a ningún negocio. Escribinos."},
+                    status_code=409)
+        else:
+            b = s.get(Business, negocio_id)
+            # Cuenta suspendida: no se corta el servicio por cuota (eso se avisa),
+            # se corta cuando NOSOTROS la suspendimos. Los datos quedan intactos.
+            if b and b.estado == "suspendida" and not usuario.es_root:
+                return JSONResponse(
+                    {"detail": "Tu cuenta está suspendida. Escribinos y la reactivamos."},
+                    status_code=403)
+            # Y el corte por falta de pago, que NO lo decide nadie: se deduce de
+            # la fecha (`cobros.estado`). Un cron que no corrió no puede regalar
+            # meses, y nadie tiene que acordarse de apagar una cuenta.
+            #
+            # 402 y no 403: el front lo distingue y manda a poner la tarjeta en
+            # vez de mostrar "no tenés permiso", que sería mentira.
+            if (b and not usuario.es_root and not _puede_sin_pagar(ruta)
+                    and not cobros.puede_entrar(b)):
+                e = cobros.estado(b)
+                return JSONResponse(
+                    {"detail": ("Se terminó tu prueba de Hilo. Poné una tarjeta y seguís."
+                                if e.get("por_que") == "se acabó la prueba" else
+                                "No pudimos cobrarte. Actualizá la tarjeta y vuelve todo."),
+                     "cortada": True, "estado": e},
+                    status_code=402)
 
     # ACÁ se decide qué ve este request. De este `with` para adentro, todas las
     # consultas de los modelos del inquilino salen filtradas solas: no hay que
@@ -193,6 +312,12 @@ async def puerta(request: Request, call_next):
     # termina mostrándole los clientes de uno a otro.
     with inquilino.usar(negocio_id):
         return await call_next(request)
+
+
+# El back-office vive en `app/root.py` y se monta acá. Va DESPUÉS del middleware
+# a propósito: sus endpoints necesitan que la puerta ya haya resuelto quién es
+# quién (`request.state.es_root`).
+app.include_router(root.router)
 
 
 @app.get("/api/auth/estado")
@@ -230,8 +355,14 @@ def auth_registro(body: RegistroIn):
         if not b:
             b = Business(nombre=(body.nombre.strip() or body.email.split("@")[0]))
             s.add(b)
-            s.commit()
-            s.refresh(b)
+        # La prueba arranca acá y no en el onboarding: la cuenta es el momento en
+        # que alguien decide entrar, y es la fecha que después le vamos a decir.
+        # Vale también para el negocio que viene del onboarding, que hasta ahora
+        # no tenía dueño ni reloj corriendo.
+        cobros.empezar_la_prueba(b)
+        s.add(b)
+        s.commit()
+        s.refresh(b)
 
         u = auth.crear_usuario(s, body.email, body.password, body.nombre, business_id=b.id)
         return {"token": auth.emitir_token(u.id), "usuario": auth.publico(u)}
@@ -249,6 +380,9 @@ def auth_login(body: LoginIn):
         # el mismo mensaje para mail inexistente y contraseña mala: no regalamos pistas
         if not u or not u.activo or not auth.verificar(body.password, u.hash):
             raise HTTPException(401, "Mail o contraseña incorrectos")
+        u.ultimo_acceso = datetime.now()
+        s.add(u)
+        s.commit()
         return {"token": auth.emitir_token(u.id), "usuario": auth.publico(u)}
 
 
@@ -338,7 +472,19 @@ def get_negocio():
                 "ia": ai.como_esta(),
                 "niveles": [{"n": i, "nombre": n, "detalle": d}
                             for i, (n, d) in enumerate(NIVELES_AUTONOMIA)],
-                "ia_activa": not ai.offline()}
+                "ia_activa": not ai.offline(),
+                # Su plan y cuánto lleva usado. Va acá porque `/api/negocio` ya
+                # lo pide toda la app: un endpoint nuevo sería otra llamada por
+                # pantalla para mostrar una línea.
+                #
+                # Y avisa, no corta. Pasarse del límite no le apaga nada a nadie:
+                # es la señal de que está listo para el plan que sigue.
+                "plan": {"clave": b.plan or "prueba",
+                         "nombre": planes.plan(b.plan)["nombre"],
+                         **cobros.cuota(s, b)},
+                # El estado de la plata viaja acá para que la barra pueda avisar
+                # («te quedan 2 días de prueba») sin una llamada más por pantalla.
+                "pago": cobros.estado(b)}
 
 
 class NegocioIn(BaseModel):
@@ -571,13 +717,90 @@ async def whatsapp_entrante(request: Request):
             # se ve en Configuración, que es donde hay que mirarlo.
             whatsapp._estado["ultimo_error"] = f"No pude ingerir un mensaje: {e}"
             print(f"[hilo] whatsapp: no pude ingerir un mensaje: {e}")
+            # …y también en el back-office, con nombre de cuenta. Un error que
+            # solo vive en la consola de Render es un error que nadie ve.
+            uso.anotar_falla("whatsapp", f"No pude ingerir un mensaje: {e}",
+                             _negocio_de("whatsapp", m.get("phone_id", "")))
     return {"ok": True, "entraron": entraron}
 
 
 @app.get("/api/whatsapp/estado")
 def whatsapp_estado():
-    """Para mirar desde Configuración si WhatsApp está andando de verdad."""
-    return whatsapp.estado()
+    """Para mirar desde Configuración si WhatsApp está andando de verdad.
+
+    Si este negocio conectó su propio número por Embedded Signup, manda ese. Si no,
+    lo que haya en el `.env`, que es la instalación de un solo negocio.
+    """
+    e = whatsapp.estado()
+    with sesion() as s:
+        cred = s.exec(select(Credencial).where(
+            Credencial.canal == "whatsapp",
+            Credencial.activo == True)).first()                    # noqa: E712
+    e["propio"] = bool(cred)
+    if cred:
+        e.update({"configurado": True, "numero": cred.etiqueta,
+                  "phone_id": cred.externo_id,
+                  "conectado_el": cred.creado.isoformat(),
+                  "ultimo_error": cred.ultimo_error or e.get("ultimo_error", "")})
+    return e
+
+
+class ConectarWA(BaseModel):
+    code: str
+    waba_id: str
+    phone_number_id: str
+
+
+@app.post("/api/whatsapp/conectar")
+def whatsapp_conectar(body: ConectarWA):
+    """El final del Embedded Signup: el cliente apretó el botón y volvió con esto.
+
+    Pasa por la puerta, así que el negocio sale de la sesión y la credencial queda
+    guardada para ESE inquilino y para ninguno más. El código dura 30 segundos, así
+    que esto se llama enseguida y el código no se guarda en ningún lado.
+    """
+    if inquilino.actual() is None:
+        raise HTTPException(409, "Tu cuenta no está asociada a ningún negocio")
+    if not (body.code and body.waba_id and body.phone_number_id):
+        raise HTTPException(400, "Faltan datos del alta de WhatsApp")
+
+    salio, r = whatsapp.conectar_cliente(body.code, body.waba_id, body.phone_number_id)
+    if not salio:
+        raise HTTPException(400, str(r))
+
+    with sesion() as s:
+        # Reconectar pisa la credencial anterior en vez de dejar dos: si quedan dos
+        # activas, cuál gana depende del orden de la base, que es exactamente el
+        # tipo de cosa que después nadie entiende.
+        cred = s.exec(select(Credencial).where(Credencial.canal == "whatsapp")).first()
+        if not cred:
+            cred = Credencial(canal="whatsapp")
+        cred.externo_id = r["phone_id"]
+        cred.etiqueta = r["numero"] or r["phone_id"]
+        cred.datos_json = secreto.cifrar(json.dumps(
+            {"token": r["token"], "waba_id": r["waba_id"], "pin": r["pin"]},
+            ensure_ascii=False))
+        cred.activo = True
+        cred.ultimo_error = r.get("aviso_registro", "")
+        cred.ultimo_ok = datetime.now()
+        s.add(cred)
+        s.commit()
+
+    return {"conectado": True, "numero": r["numero"],
+            "nombre_visible": r["nombre_visible"], "calidad": r["calidad"],
+            "aviso": r.get("aviso_registro", "")}
+
+
+@app.post("/api/whatsapp/desconectar")
+def whatsapp_desconectar():
+    """Suelta el número de este negocio. No borra el hilo ni los mensajes."""
+    with sesion() as s:
+        cred = s.exec(select(Credencial).where(Credencial.canal == "whatsapp")).first()
+        if not cred:
+            raise HTTPException(404, "Este negocio no tiene WhatsApp conectado")
+        s.delete(cred)
+        s.commit()
+    return {"conectado": False}
 
 
 class ProbarWA(BaseModel):
@@ -599,6 +822,553 @@ def whatsapp_probar(body: ProbarWA):
     if not salio:
         raise HTTPException(400, error or "No pude enviarlo")
     return {"enviado": True, "estado": whatsapp.estado()}
+
+
+# ------------------------------------------------------------------- el plan
+# Dónde se le pide la tarjeta al cliente. Tres endpoints y un webhook: mirar el
+# plan, suscribirse, cancelar, y enterarse de cada cobro.
+
+
+def _url_publica(request: Request) -> str:
+    """A dónde vuelve el cliente después de pagar en Mercado Pago.
+
+    Tres fuentes, en orden de cuánto saben:
+
+      1. `HILO_URL` del `.env` — en la nube el server no sabe por qué dominio lo
+         llamaron, así que se lo decimos.
+      2. El `Origin` del pedido: es la dirección donde el usuario tiene la app
+         abierta de verdad. En desarrollo eso es `:5173` (Vite) y NO `:8000`,
+         que es donde corre este proceso.
+      3. La request, como último recurso.
+
+    El orden importa: mandarlo al puerto del backend es mandarlo a otro origen,
+    donde su sesión no existe y la app lo recibe como si no hubiera entrado nunca.
+    """
+    fijada = (os.environ.get("HILO_URL") or "").strip()
+    if fijada:
+        return fijada.rstrip("/") + "/"
+    origen = (request.headers.get("origin") or "").strip()
+    if origen.startswith("http"):
+        return origen.rstrip("/") + "/"
+    return str(request.base_url)
+
+
+def _mi_negocio(s) -> Business:
+    b = s.get(Business, inquilino.actual()) if inquilino.actual() else None
+    if not b:
+        raise HTTPException(409, "Tu cuenta no está asociada a ningún negocio")
+    return b
+
+
+@app.get("/api/plan")
+def mi_plan(request: Request):
+    """Todo lo que el cliente necesita saber sobre su plan y su plata.
+
+    Esta ruta sigue viva aunque la cuenta esté cortada: si al que le cortaste no
+    le queda ni la pantalla donde poner la tarjeta, no hay forma de que vuelva.
+    """
+    with sesion() as s:
+        b = _mi_negocio(s)
+        return {
+            "pago": cobros.estado(b),
+            "cuota": cobros.cuota(s, b),
+            "planes": planes.catalogo(),
+            "cobros": cobros.historial(s, b.id, 12),
+            "mercadopago": {"simulado": mp.simulado(), "de_prueba": mp.es_de_prueba()},
+            "dias_de_prueba": cobros.DIAS_DE_PRUEBA,
+        }
+
+
+class SuscribirIn(BaseModel):
+    plan: str = "basico"
+
+
+@app.post("/api/plan/suscribir")
+def suscribirse(body: SuscribirIn, request: Request):
+    """Devuelve a dónde mandar al cliente a poner la tarjeta.
+
+    La tarjeta la toma Mercado Pago, en su checkout. Nosotros no la vemos, no la
+    guardamos y no la queremos: guardar tarjetas es un problema de cumplimiento
+    que no le toca a una app de dos personas.
+    """
+    if body.plan not in planes.PLANES or body.plan == "prueba":
+        raise HTTPException(400, "Elegí un plan de verdad")
+    precio = planes.precio_sugerido(body.plan)
+    with sesion() as s:
+        b = _mi_negocio(s)
+        if b.precio_mensual:
+            precio = b.precio_mensual          # el precio negociado le gana al del catálogo
+        u = s.exec(select(Usuario).where(Usuario.business_id == b.id)).first()
+        salio, r = mp.crear_suscripcion(b.id, planes.plan(body.plan)["nombre"], precio,
+                                        u.email if u else "sin-mail@hilo.app",
+                                        _url_publica(request))
+        if not salio:
+            uso.anotar_falla("pagos", f"No pude crear la suscripción: {r.get('error')}")
+            raise HTTPException(400, f"Mercado Pago no aceptó la suscripción: {r.get('error')}")
+        b.plan = body.plan
+        b.precio_mensual = precio
+        b.suscripcion_id = r["id"]
+        b.suscripcion_estado = "pendiente"
+        s.add(b)
+        s.commit()
+        return {"ir_a": r["init_point"], "simulado": r.get("simulado", False)}
+
+
+@app.post("/api/plan/cancelar")
+def cancelar_suscripcion():
+    """Da de baja el débito automático. NO le corta el acceso: paga lo que pagó.
+
+    Que cancelar sea fácil es lo que hace que poner la tarjeta no dé miedo.
+    """
+    with sesion() as s:
+        b = _mi_negocio(s)
+        if not b.suscripcion_id:
+            raise HTTPException(400, "No hay ninguna suscripción activa")
+        salio, detalle = mp.cancelar(b.suscripcion_id)
+        b.suscripcion_estado = "cancelada"
+        b.suscripcion_id = ""
+        b.tarjeta = ""
+        s.add(b)
+        s.commit()
+        return {"cancelada": True, "detalle": detalle, "pago": cobros.estado(b)}
+
+
+# ------------------------------------------------------------------- cobros
+# Lo que pasa cuando Mercado Pago cobra (o no puede).
+
+
+def _aplicar_pago(negocio_id: int, monto: int, pago_id: str, quien: str = "mercadopago"):
+    """Un cobro que entró de verdad: corre la fecha y reactiva si hacía falta.
+
+    Es el mismo camino que usa el back-office cuando marcamos una transferencia a
+    mano. Que la tarjeta y la transferencia terminen en la misma función es lo que
+    hace que el libro sea uno solo.
+    """
+    with sesion() as s, inquilino.sin_filtro():
+        b = s.get(Business, negocio_id)
+        if not b:
+            return False
+        if cobros.ya_registrado(s, pago_id):
+            return True                     # MP reintenta: el mismo cobro no suma dos veces
+        cobros.registrar(s, b, monto, "mercadopago", 1, nota="débito automático",
+                         quien=quien, externo_id=pago_id)
+        if b.estado == "suspendida":
+            b.estado = "activa"
+        b.suscripcion_estado = "activa"
+        s.add(b)
+        s.commit()
+        return True
+
+
+@app.post("/api/pagos/webhook")
+async def pagos_webhook(request: Request):
+    """Mercado Pago avisa que pasó algo. Nunca le creemos al aviso.
+
+    Este endpoint está abierto —MP no manda credenciales— así que lo único que se
+    toma del cuerpo es un **id**. Después le preguntamos a MP por ese id con
+    nuestro token, y actuamos según lo que conteste ÉL. Si alguien nos inventa un
+    webhook, lo peor que consigue es que le preguntemos a Mercado Pago por un id
+    que no existe.
+
+    Devuelve 200 siempre, incluso si algo falla: un 500 hace que MP reintente y,
+    si insiste, deje de avisarnos. El error queda anotado.
+    """
+    mp._estado["webhooks"] += 1
+    try:
+        cuerpo = json.loads((await request.body()).decode() or "{}")
+    except ValueError:
+        cuerpo = {}
+    tipo = cuerpo.get("type") or cuerpo.get("topic") or ""
+    ident = str((cuerpo.get("data") or {}).get("id") or cuerpo.get("id") or "")
+    if not ident:
+        return {"ok": True, "ignorado": "sin id"}
+
+    try:
+        if tipo in ("subscription_preapproval", "preapproval"):
+            salio, sub = mp.ver_suscripcion(ident)
+            if not salio:
+                return {"ok": True, "ignorado": "no pude leer la suscripción"}
+            negocio_id = int(str(sub.get("external_reference", "")).replace("negocio-", "") or 0)
+            with sesion() as s, inquilino.sin_filtro():
+                b = s.get(Business, negocio_id) if negocio_id else None
+                if b:
+                    b.suscripcion_id = sub.get("id", b.suscripcion_id)
+                    b.suscripcion_estado = mp.traducir(sub.get("status", ""))
+                    b.tarjeta = mp.tarjeta_de(sub) or b.tarjeta
+                    s.add(b)
+                    s.commit()
+            return {"ok": True, "suscripcion": ident}
+
+        if tipo in ("subscription_authorized_payment", "authorized_payment"):
+            salio, pago = mp.ver_pago(ident)
+            if not salio:
+                return {"ok": True, "ignorado": "no pude leer el pago"}
+            estado_pago = pago.get("status", "")
+            sid = str(pago.get("preapproval_id", ""))
+            with sesion() as s, inquilino.sin_filtro():
+                b = s.exec(select(Business).where(Business.suscripcion_id == sid)).first()
+            if not b:
+                return {"ok": True, "ignorado": "no encontré la cuenta"}
+            if estado_pago == "approved":
+                _aplicar_pago(b.id, int(float(pago.get("transaction_amount") or 0)), ident)
+            else:
+                # Un cobro rechazado no corta nada por sí solo: la cuenta se va a
+                # cortar sola cuando se le acabe la gracia, que es lo mismo que le
+                # pasaría si nunca hubiéramos recibido este aviso.
+                uso.anotar_falla("pagos", f"Cobro rechazado ({estado_pago})", b.id)
+            return {"ok": True, "pago": ident, "estado": estado_pago}
+    except Exception as e:                                       # noqa: BLE001
+        uso.anotar_falla("pagos", f"Webhook de Mercado Pago: {e}")
+        print(f"[hilo] webhook de Mercado Pago: {e}")
+    return {"ok": True}
+
+
+@app.post("/api/pagos/simulado/{sid}")
+def pago_simulado(sid: str):
+    """El "pago" de la pantalla de tarjeta falsa. SOLO en modo simulado.
+
+    Existe para poder mostrar el circuito entero —poner la tarjeta, que se cobre,
+    que la cuenta vuelva— sin credenciales de Mercado Pago. Si algún día hay
+    credenciales de verdad, `mp.simulado()` es False y esto devuelve 404: un
+    endpoint que regala meses no puede quedar vivo en producción por olvido.
+    """
+    if not mp.simulado():
+        raise HTTPException(404, "No existe")
+    if not sid.startswith("SIM-"):
+        raise HTTPException(400, "Esa no es una suscripción simulada")
+    negocio_id = int(sid.split("-")[1])
+    with sesion() as s, inquilino.sin_filtro():
+        b = s.get(Business, negocio_id)
+        if not b:
+            raise HTTPException(404, "No existe esa cuenta")
+        b.suscripcion_id = sid
+        b.tarjeta = "Visa ····4242"
+        s.add(b)
+        s.commit()
+        monto = b.precio_mensual or planes.precio_sugerido(b.plan)
+    _aplicar_pago(negocio_id, monto, f"{sid}-1", quien="tarjeta simulada")
+    with sesion() as s, inquilino.sin_filtro():
+        return {"ok": True, "pago": cobros.estado(s.get(Business, negocio_id))}
+
+
+# ----------------------------------------------------------------- telegram
+# Un solo bot de Hilo para todos los clientes. Lo que cambia por cuenta no es el
+# token —ese es nuestro— sino a quién pertenece cada conversación, y eso lo
+# resuelve el código de vinculación (`app/vinculos.py`).
+
+
+def _negocio_de_telegram(conexion_id: str, chat_id: str) -> int | None:
+    """De qué cuenta de Hilo es este mensaje. Tres caminos, en orden de certeza.
+
+    Un webhook no trae sesión: nadie nos dice de quién es. Con un bot por cliente
+    lo diría el token, pero acá el bot es uno solo — así que hay que deducirlo.
+    """
+    with sesion() as s, inquilino.sin_filtro():
+        # 1. Modo Business: la conexión es del vendedor y no hay ambigüedad.
+        if conexion_id:
+            c = s.exec(select(Credencial).where(
+                Credencial.canal == "telegram",
+                Credencial.referencia == conexion_id)).first()
+            if c:
+                return c.business_id
+        # 2. Ya es cliente de alguien: su chat quedó guardado como identidad.
+        ident = s.exec(select(Identity).where(
+            Identity.canal == "telegram", Identity.valor == str(chat_id))).first()
+        if ident:
+            return ident.business_id
+        # 3. Escribió antes pero todavía no lo convirtieron en cliente. Es el caso
+        #    más común de todos y el más fácil de olvidar: alguien manda tres
+        #    mensajes seguidos, el vendedor todavía no lo cargó, y del segundo en
+        #    adelante no habría forma de saber de quién eran. El rastro está en
+        #    los mensajes que ya entraron.
+        m = s.exec(select(Message)
+                   .where(Message.canal == "telegram",
+                          Message.remitente == str(chat_id))
+                   .order_by(Message.creado.desc())).first()
+        if m and m.business_id:
+            return m.business_id
+        # 4. Es el dueño escribiéndole a su propio bot.
+        c = s.exec(select(Credencial).where(
+            Credencial.canal == "telegram",
+            Credencial.externo_id == str(chat_id))).first()
+        return c.business_id if c else None
+
+
+def _telegram_vincular(ev: dict):
+    """Alguien apretó un link del bot. Puede ser el dueño o un cliente suyo."""
+    codigo = (ev.get("codigo") or "").strip()
+
+    # --- un cliente del vendedor, que llegó por el link público ---
+    if codigo.startswith("neg_"):
+        with sesion() as s, inquilino.sin_filtro():
+            b = s.exec(select(Business).where(
+                Business.codigo_publico == codigo[4:])).first()
+        if not b:
+            tg.enviar(ev["chat_id"], "Ese link no corresponde a ninguna cuenta.")
+            return
+        with inquilino.usar(b.id), sesion() as s:
+            pl.ingesta(s, "telegram", ev["chat_id"],
+                       "Hola, te escribo por Telegram.",
+                       remitente_nombre=ev.get("usuario", ""))
+        tg.enviar(ev["chat_id"], "¡Listo! Escribime lo que necesites y te contestamos.")
+        return
+
+    # --- el dueño conectando su cuenta ---
+    with sesion() as s:
+        v = vinculos.buscar(s, codigo)
+        if not v:
+            tg.enviar(ev["chat_id"],
+                      "Ese código no sirve o ya venció. Pedí uno nuevo desde Hilo, "
+                      "en Canales.")
+            return
+        negocio_id = v.business_id
+        vinculos.usar(s, v, {"usuario_id": ev.get("usuario_id"),
+                             "arroba": ev.get("arroba"), "chat_id": ev.get("chat_id")})
+
+    with inquilino.usar(negocio_id), sesion() as s:
+        cred = s.exec(select(Credencial).where(Credencial.canal == "telegram")).first()
+        if not cred:
+            cred = Credencial(canal="telegram")
+        cred.externo_id = str(ev.get("usuario_id") or ev.get("chat_id"))
+        cred.etiqueta = ("@" + ev["arroba"]) if ev.get("arroba") else ev.get("usuario", "")
+        cred.datos_json = secreto.cifrar(json.dumps(
+            {"chat_id": ev.get("chat_id"), "usuario_id": ev.get("usuario_id"),
+             "arroba": ev.get("arroba"), "modo": "bot"}, ensure_ascii=False))
+        cred.activo = True
+        cred.ultimo_error = ""
+        cred.ultimo_ok = datetime.now()
+        s.add(cred)
+        b = s.get(Business, negocio_id)
+        if b and not b.codigo_publico:
+            b.codigo_publico = secrets.token_urlsafe(6).replace("-", "").replace("_", "")[:8]
+            s.add(b)
+        s.commit()
+        publico = b.codigo_publico if b else ""
+
+    usuario = tg.quien_soy()
+    tg.enviar(ev["chat_id"],
+              f"Listo{(', ' + ev['usuario']) if ev.get('usuario') else ''}: "
+              "tu Telegram quedó conectado a Hilo.\n\n"
+              "Ahora tenés dos formas de usarlo:\n\n"
+              f"1) Pasale este link a tus clientes y lo que te escriban entra a Hilo:\n"
+              f"https://t.me/{usuario}?start=neg_{publico}\n\n"
+              "2) Si tenés Telegram Premium, andá a Configuración → Telegram Business "
+              f"→ Chatbots y poné @{usuario}. Ahí Hilo ve tus chats de siempre y "
+              "contesta como vos.")
+
+
+def _telegram_conexion(ev: dict):
+    """El cliente conectó (o desconectó) el bot en su Telegram Business."""
+    with sesion() as s, inquilino.sin_filtro():
+        cred = s.exec(select(Credencial).where(
+            Credencial.canal == "telegram",
+            Credencial.externo_id == str(ev.get("usuario_id")))).first()
+        if not cred:
+            # Conectó el bot en Telegram sin haber pasado por Hilo. No sabemos de
+            # qué cuenta es, así que se lo decimos en vez de tragárnoslo.
+            tg.enviar(ev["chat_id"],
+                      "Te conectaste al bot de Hilo, pero todavía no sé de qué cuenta "
+                      "sos. Entrá a Hilo → Canales → Telegram y usá el link de ahí.")
+            return
+        datos = json.loads(secreto.descifrar(cred.datos_json) or "{}")
+        datos.update({"conexion_id": ev["conexion_id"], "modo": "business",
+                      "puede_responder": ev["puede_responder"]})
+        cred.referencia = ev["conexion_id"] if ev["activa"] else ""
+        cred.datos_json = secreto.cifrar(json.dumps(datos, ensure_ascii=False))
+        cred.activo = bool(ev["activa"])
+        cred.ultimo_ok = datetime.now()
+        cred.ultimo_error = ("" if ev["puede_responder"] else
+                             "Conectado, pero sin permiso para responder: activalo en "
+                             "Telegram → Configuración → Telegram Business → Chatbots.")
+        s.add(cred)
+        s.commit()
+    if ev["activa"]:
+        tg.enviar(ev["chat_id"],
+                  "Perfecto: ahora Hilo ve tus conversaciones y puede contestar como vos."
+                  if ev["puede_responder"] else
+                  "Quedé conectado, pero sin permiso para responder. Activá «puede "
+                  "responder» en Telegram Business → Chatbots y ya está.")
+
+
+def _entro_un_telegram(ev: dict):
+    """Un mensaje de Telegram, tratado igual que cualquier otro."""
+    negocio_id = _negocio_de_telegram(ev.get("conexion_id", ""), ev["remitente"])
+    if not negocio_id:
+        return False
+    with inquilino.usar(negocio_id), sesion() as s:
+        cred = s.exec(select(Credencial).where(Credencial.canal == "telegram")).first()
+        # En Business, el vendedor puede contestar a mano desde su celular. Ese
+        # mensaje entra por el mismo webhook y NO es del cliente: guardarlo como
+        # entrante daría vuelta la pelota y Hilo le diría que le debe respuesta a
+        # alguien al que ya le contestó.
+        if cred and ev.get("de_quien_escribe") == cred.externo_id:
+            ident = s.exec(select(Identity).where(
+                Identity.canal == "telegram", Identity.valor == ev["remitente"])).first()
+            if ident:
+                s.add(Message(alias_id=ident.alias_id, canal="telegram",
+                              direccion="saliente", autor="humano", texto=ev["texto"],
+                              externo_id=ev["externo_id"]))
+                s.commit()
+            return True
+        pl.ingesta(s, "telegram", ev["remitente"], ev["texto"],
+                   externo_id=ev["externo_id"], remitente_nombre=ev.get("nombre", ""))
+    return True
+
+
+@app.post("/api/telegram/webhook")
+async def telegram_entrante(request: Request):
+    """Todo lo que manda Telegram. Va abierto: lo protege el secret token.
+
+    Devuelve 200 siempre. Un 500 hace que Telegram reintente y, si insiste, deje
+    de mandar: el error queda anotado, pero el webhook contesta que sí.
+    """
+    if not tg.firma_valida(request.headers.get("x-telegram-bot-api-secret-token", "")):
+        tg._estado["rechazados"] += 1
+        raise HTTPException(403, "Secret token incorrecto")
+    try:
+        payload = json.loads((await request.body()).decode() or "{}")
+    except ValueError:
+        payload = {}
+
+    for ev in tg.procesar(payload):
+        try:
+            if ev["tipo"] == "vincular":
+                _telegram_vincular(ev)
+            elif ev["tipo"] == "conexion":
+                _telegram_conexion(ev)
+            elif ev["tipo"] == "mensaje":
+                _entro_un_telegram(ev)
+        except Exception as e:                                   # noqa: BLE001
+            tg._estado["ultimo_error"] = str(e)[:300]
+            uso.anotar_falla("telegram", f"No pude procesar un update: {e}")
+            print(f"[hilo] telegram: {e}")
+    return {"ok": True}
+
+
+# ------------------------------------------------------------------ canales
+# La pantalla donde el cliente enchufa sus cuentas. Es donde se cae la gente, así
+# que la API está armada para que la pantalla no tenga que pensar: cada canal
+# viene con su estado, su etiqueta y qué hacer a continuación, ya masticado.
+
+# Los canales que existen, en el orden en que conviene mostrarlos.
+CANALES_DEL_CLIENTE = [
+    ("telegram",  "Telegram",  "Tus chats de Telegram, adentro de Hilo."),
+    ("whatsapp",  "WhatsApp",  "Tu número de WhatsApp Business, con la API oficial."),
+    ("mail",      "Mail",      "Tu casilla: lo que entra y lo que sale."),
+    ("instagram", "Instagram", "Los mensajes directos de tu cuenta."),
+    ("linkedin",  "LinkedIn",  "Tus conversaciones de LinkedIn."),
+]
+
+# Por qué un canal todavía no se puede conectar. Decirlo es mejor que mostrar un
+# botón que no hace nada: el que lo aprieta y no pasa nada cree que se rompió.
+POR_QUE_NO = {
+    "instagram": "Falta que Meta apruebe nuestra app. Avisamos cuando esté.",
+    "linkedin": "LinkedIn no tiene API de mensajes. Estamos armando una extensión "
+                "del navegador para que funcione sin arriesgar tu cuenta.",
+    "whatsapp": "Todavía no se conecta solo: escribinos y te lo dejamos andando en "
+                "el día. Estamos terminando el alta con Meta para que sea un botón.",
+    "mail": "Todavía no se conecta solo: escribinos y te lo dejamos andando. Va a "
+            "ser una regla de reenvío en tu casilla, sin darnos ninguna contraseña.",
+}
+
+
+def _ultimos_del_canal(s, canal: str) -> dict:
+    """Cuándo entró y cuándo salió el último mensaje. Es la prueba de vida."""
+    def ultimo(direccion):
+        m = s.exec(select(Message)
+                   .where(Message.canal == canal, Message.direccion == direccion,
+                          Message.simulado == False)                    # noqa: E712
+                   .order_by(Message.creado.desc())).first()
+        return m.creado.isoformat() if m else ""
+    return {"ultimo_entrante": ultimo("entrante"), "ultimo_saliente": ultimo("saliente")}
+
+
+@app.get("/api/canales")
+def canales_del_cliente():
+    """El estado de todos los canales de esta cuenta, en una sola llamada."""
+    salida = []
+    with sesion() as s:
+        creds = {c.canal: c for c in s.exec(select(Credencial))}
+        for clave, nombre, para_que in CANALES_DEL_CLIENTE:
+            cred = creds.get(clave)
+            item = {"canal": clave, "nombre": nombre, "para_que": para_que,
+                    "estado": "desconectado", "etiqueta": "", "detalle": "",
+                    "error": "", "modo": "", "conectado_el": "",
+                    "puede_conectarse": clave not in POR_QUE_NO,
+                    "por_que_no": POR_QUE_NO.get(clave, ""),
+                    **_ultimos_del_canal(s, clave)}
+
+            if cred and cred.activo:
+                item.update({"estado": "andando", "etiqueta": cred.etiqueta,
+                             "conectado_el": cred.creado.isoformat(),
+                             "error": cred.ultimo_error or ""})
+                if cred.ultimo_error:
+                    item["estado"] = "error"
+                if clave == "telegram":
+                    datos = json.loads(secreto.descifrar(cred.datos_json) or "{}")
+                    item["modo"] = datos.get("modo", "bot")
+                    item["detalle"] = ("Conectado a tu cuenta: Hilo contesta como vos."
+                                       if item["modo"] == "business" else
+                                       "Andando en modo bot: tus clientes le escriben "
+                                       "al bot de Hilo.")
+
+            # Los dos canales que todavía pueden venir del .env de la instalación
+            if clave == "mail" and item["estado"] == "desconectado" and correo.configurado():
+                item.update({"estado": "andando", "etiqueta": correo.estado().get("casilla", ""),
+                             "detalle": "Configurado por nosotros, en el servidor."})
+            if clave == "whatsapp" and item["estado"] == "desconectado" and whatsapp.configurado():
+                w = whatsapp.estado()
+                item.update({"estado": "andando", "etiqueta": w.get("numero") or w.get("phone_id", ""),
+                             "detalle": "Configurado por nosotros, en el servidor."})
+
+            if clave == "telegram":
+                v = vinculos.vivo(s, "telegram")
+                item["vinculo"] = vinculos.como_esta(v)
+                if item["estado"] == "desconectado" and item["vinculo"]["esperando"]:
+                    item["estado"] = "conectando"
+                if item["vinculo"]["esperando"]:
+                    item["vinculo"]["link"] = tg.link_de_vinculacion(item["vinculo"]["codigo"])
+                item["puede_conectarse"] = tg.configurado()
+                if not tg.configurado():
+                    item["por_que_no"] = ("Falta el token del bot de Hilo en el "
+                                          "servidor (TG_TOKEN).")
+                b = pl.negocio(s)
+                item["link_publico"] = (
+                    f"https://t.me/{tg.quien_soy()}?start=neg_{b.codigo_publico}"
+                    if (b.codigo_publico and tg.quien_soy()) else "")
+            # Un canal que YA está andando no necesita que le expliquen por qué
+            # no se puede conectar. El cartel es para el que todavía no lo tiene.
+            if item["estado"] in ("andando", "error"):
+                item["por_que_no"] = ""
+                item["puede_conectarse"] = True
+            salida.append(item)
+    return {"canales": salida, "bot": tg.quien_soy()}
+
+
+@app.post("/api/canales/telegram/vincular")
+def canal_telegram_vincular(request: Request):
+    """Un código nuevo para enganchar Telegram. Dura media hora y se usa una vez."""
+    if not tg.configurado():
+        raise HTTPException(400, "El bot de Hilo todavía no está configurado en el servidor")
+    with sesion() as s:
+        u = s.get(Usuario, getattr(request.state, "uid", None) or 0)
+        v = vinculos.crear(s, "telegram", quien=u.email if u else "")
+        estado = vinculos.como_esta(v)
+    estado["link"] = tg.link_de_vinculacion(v.codigo)
+    estado["bot"] = tg.quien_soy()
+    return estado
+
+
+@app.post("/api/canales/{canal}/desconectar")
+def canal_desconectar(canal: str):
+    """Suelta el canal. No borra ni un mensaje: el hilo con cada cliente queda."""
+    with sesion() as s:
+        cred = s.exec(select(Credencial).where(Credencial.canal == canal)).first()
+        if not cred:
+            raise HTTPException(404, "Ese canal no está conectado")
+        s.delete(cred)
+        s.commit()
+    return {"desconectado": True, "canal": canal}
 
 
 @app.get("/api/diagnostico-ia")
@@ -812,7 +1582,12 @@ def responder(alias_id: int, body: RespuestaIn):
         salio, error = pl.despachar(s, a, body.canal, asunto, body.texto,
                                     cc=body.cc, cco=body.cco)
         if error:
-            raise HTTPException(400, f"No se pudo enviar el mail: {error}")
+            # Decía "el mail" siempre, también cuando fallaba WhatsApp. Un error
+            # que nombra mal el canal manda a buscar el problema al lugar
+            # equivocado. Y queda anotado: un envío que falla es exactamente lo
+            # que el back-office tiene que mostrar en "últimas fallas".
+            uso.anotar_falla(body.canal, f"No salió a {a.nombre}: {error}")
+            raise HTTPException(400, f"No se pudo enviar por {body.canal}: {error}")
 
         s.add(Message(alias_id=alias_id, canal=body.canal, direccion="saliente",
                       autor=body.autor, texto=body.texto,

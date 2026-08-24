@@ -7,17 +7,43 @@ export const sesion = {
   borrar: () => { try { localStorage.removeItem(LLAVE) } catch { /* nada */ } },
 }
 
+/** "Ver como": mientras esté puesto, TODOS los pedidos van a esa cuenta.
+
+    Vive en localStorage y no en el estado de React a propósito: si se pierde al
+    recargar, uno recarga por costumbre y sigue clickeando creyendo que está en
+    la cuenta del cliente cuando ya volvió a la suya. Salir es borrarlo. */
+const CUENTA = 'hilo.vercomo'
+
+export const verComo = {
+  actual: () => { try { return JSON.parse(localStorage.getItem(CUENTA) || 'null') } catch { return null } },
+  poner: (cuenta) => { try { localStorage.setItem(CUENTA, JSON.stringify(cuenta)) } catch { /* modo privado */ } },
+  salir: () => { try { localStorage.removeItem(CUENTA) } catch { /* nada */ } },
+}
+
 /** Se dispara cuando el backend nos dice que la sesión no vale más. */
 let alCaerLaSesion = () => {}
 export const cuandoCaigaLaSesion = (fn) => { alCaerLaSesion = fn }
 
+/** Se dispara con el 402: se terminó la prueba o no entró el pago.
+
+    Es un evento y no un error más porque la respuesta correcta no es "mostrar un
+    cartel rojo" sino "llevarlo a la pantalla donde puede pagar". */
+let alCortarse = () => {}
+export const cuandoSeCorte = (fn) => { alCortarse = fn }
+
 async function pedir(url, opciones) {
   const token = sesion.token()
+  // El back-office se mira SIEMPRE desde nuestra cuenta: si el header viajara
+  // también ahí, "ver como" se vería a sí mismo y la lista de cuentas cambiaría
+  // según a quién estás mirando. Ese header, además, no es un permiso: el
+  // backend lo ignora si el usuario no es root.
+  const mirando = url.startsWith('/api/root') ? null : verComo.actual()
   const r = await fetch(base + url, {
     ...opciones,
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(mirando ? { 'X-Hilo-Negocio': String(mirando.id) } : {}),
       ...(opciones?.headers || {}),
     },
   })
@@ -27,9 +53,30 @@ async function pedir(url, opciones) {
     alCaerLaSesion()
     throw new Error('Necesitás entrar con tu cuenta')
   }
+  // 402 = pagar. El backend lo manda cuando se acabó la prueba o no entró el
+  // cobro, y viene con el estado adentro para que la pantalla lo explique.
+  if (r.status === 402) {
+    let cuerpo = {}
+    try { cuerpo = await r.json() } catch { /* sin cuerpo */ }
+    alCortarse(cuerpo)
+    throw new Error(cuerpo.detail || 'Hay que poner una tarjeta para seguir')
+  }
   if (!r.ok) {
     let detalle = `${r.status} en ${url}`
     try { const j = await r.json(); if (j.detail) detalle = j.detail } catch { /* sin cuerpo */ }
+    /* FastAPI contesta exactamente {"detail":"Not Found"} cuando la RUTA no
+       existe. Los 404 nuestros están todos escritos en castellano ("No existe
+       ese cliente"), así que este "Not Found" pelado significa una sola cosa: el
+       server que está corriendo no tiene ese endpoint.
+
+       Y eso, en esta app, casi siempre es lo mismo: el front se recargó solo
+       (Vite) y el backend no. Decirlo acá ahorra media hora de buscar el
+       problema en el lugar equivocado — ya nos pasó dos veces. */
+    if (r.status === 404 && /^not found$/i.test(detalle.trim())) {
+      detalle = `El backend que está corriendo no conoce ${url}. `
+        + 'Casi siempre es que quedó viejo: frená `python run.py` y volvé a '
+        + 'levantarlo. Python no recarga solo, aunque el front sí.'
+    }
     throw new Error(detalle)
   }
   return r.json()
@@ -66,6 +113,28 @@ export const api = {
   cliente:     (token)       => pedir(`/api/cliente/${token}`),
   clienteSimula:(token)      => pedir(`/api/cliente/${token}/simular`, { method: 'POST' }),
   clienteEnvia:(token, body) => pedir(`/api/cliente/${token}/enviar`, { method: 'POST', body: JSON.stringify(body) }),
+
+  // --- los canales: conectar las cuentas de afuera ---
+  canales:          ()        => pedir('/api/canales'),
+  vincularTelegram: ()        => pedir('/api/canales/telegram/vincular', { method: 'POST' }),
+  desconectarCanal: (canal)   => pedir(`/api/canales/${canal}/desconectar`, { method: 'POST' }),
+
+  // --- el plan y la tarjeta, del lado del cliente ---
+  plan:        ()            => pedir('/api/plan'),
+  suscribir:   (plan)        => pedir('/api/plan/suscribir', { method: 'POST', body: JSON.stringify({ plan }) }),
+  cancelarPlan:()            => pedir('/api/plan/cancelar', { method: 'POST' }),
+  pagoSimulado:(sid)         => pedir(`/api/pagos/simulado/${sid}`, { method: 'POST' }),
+
+  // --- el back-office nuestro (#/root). Todos piden es_root del otro lado ---
+  rootResumen: ()            => pedir('/api/root/resumen'),
+  rootCuenta:  (id)          => pedir(`/api/root/cuenta/${id}`),
+  rootEditar:  (id, body)    => pedir(`/api/root/cuenta/${id}`, { method: 'POST', body: JSON.stringify(body) }),
+  rootVerComo: (id)          => pedir(`/api/root/ver-como/${id}`, { method: 'POST' }),
+  rootCobrar:  (id, body)    => pedir(`/api/root/cuenta/${id}/cobro`, { method: 'POST', body: JSON.stringify(body) }),
+  rootCobros:  ()            => pedir('/api/root/cobros'),
+  rootProbarWhatsapp: ()     => pedir('/api/root/probar-whatsapp', { method: 'POST' }),
+  rootAccesos: ()            => pedir('/api/root/accesos'),
+  rootFallas:  ()            => pedir('/api/root/fallas'),
 }
 
 // --- helpers de presentación, compartidos por las pantallas ---

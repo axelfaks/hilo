@@ -469,6 +469,7 @@ function ModalBorrador({ ficha, onCerrar, onCambio, onEnviado }) {
   const [canal, setCanal] = useState(b.borrador?.canal || ficha.responder_por || 'mail')
   const [pensando, setPensando] = useState(!b.borrador)
   const [enviando, setEnviando] = useState(false)
+  const [falloEnvio, setFalloEnvio] = useState('')
   const area = useRef(null)
 
   const cargar = async (tono) => {
@@ -547,7 +548,9 @@ function ModalBorrador({ ficha, onCerrar, onCambio, onEnviado }) {
 
         <div className="modal-foot">
           <span className="spacer">
-            {escalado ? 'Escribile vos desde el redactor de abajo.'
+            {falloEnvio
+              ? <b style={{ color: 'var(--st-yours)' }}>{falloEnvio}</b>
+              : escalado ? 'Escribile vos desde el redactor de abajo.'
               : `Se envía por ${CANAL_LABEL[canal] || canal}, el último canal que usó ${ficha.contacto?.split(' ')[0] || 'el cliente'}.`}
           </span>
           <button className="btn btn--secondary" onClick={onCerrar}>Descartar</button>
@@ -555,8 +558,16 @@ function ModalBorrador({ ficha, onCerrar, onCambio, onEnviado }) {
             <button className="btn btn--primary" disabled={pensando || enviando || !texto.trim()}
               onClick={async () => {
                 setEnviando(true)
-                await api.responder(ficha.id, { texto, canal, asunto, cc, cco, autor: 'ia' })
-                onEnviado()
+                try {
+                  await api.responder(ficha.id, { texto, canal, asunto, cc, cco, autor: 'ia' })
+                  onEnviado()
+                } catch (e) {
+                  // Sin esto el botón se quedaba en "Enviando…" para siempre y el
+                  // motivo real —la ventana de 24 h, el número no permitido— se
+                  // perdía en la consola.
+                  setFalloEnvio(e.message)
+                  setEnviando(false)
+                }
               }}>
               {enviando ? 'Enviando…' : 'Aprobar y enviar'}
             </button>
@@ -582,6 +593,7 @@ function Redactor({ ficha, canalSugerido, onEnviado }) {
   const [cco, setCco] = useState('')
   const [texto, setTexto] = useState('')
   const [enviando, setEnviando] = useState(false)
+  const [fallo, setFallo] = useState('')
   useEffect(() => { setCanal(inicial()) }, [canalSugerido, ficha.id])
 
   const elegido = disponibles.find(c => c.canal === canal) || disponibles[0]
@@ -610,17 +622,31 @@ function Redactor({ ficha, canalSugerido, onEnviado }) {
         <button className="btn btn--primary" disabled={enviando || !texto.trim()}
           onClick={async () => {
             setEnviando(true)
-            await api.responder(ficha.id, {
-              texto, canal, autor: 'humano',
-              asunto: elegido.asunto ? asunto : '',
-              cc: elegido.asunto ? cc : '', cco: elegido.asunto ? cco : '',
-            })
-            setTexto(''); setAsunto(''); setCc(''); setCco(''); setEnviando(false); onEnviado()
+            setFallo('')
+            try {
+              await api.responder(ficha.id, {
+                texto, canal, autor: 'humano',
+                asunto: elegido.asunto ? asunto : '',
+                cc: elegido.asunto ? cc : '', cco: elegido.asunto ? cco : '',
+              })
+              setTexto(''); setAsunto(''); setCc(''); setCco('')
+              onEnviado()
+            } catch (e) {
+              /* El motivo importa: "fuera de la ventana de 24 h" y "el número no
+                 está en la lista de Meta" se arreglan de maneras distintas. */
+              setFallo(e.message)
+            }
+            setEnviando(false)
           }}>
           {enviando ? 'Enviando…' : `Enviar por ${elegido.label}`}
         </button>
         <RegistrarNoDigital id={ficha.id} onHecho={onEnviado} />
       </div>
+      {fallo && (
+        <p className="t-small" style={{ marginTop: 10, color: 'var(--st-yours)' }}>
+          <b>No salió.</b> {fallo}
+        </p>
+      )}
     </section>
   )
 }

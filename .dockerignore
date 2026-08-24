@@ -1,8 +1,17 @@
 __pycache__/
 *.pyc
-hilo.db
-.env
-.hilo_secreto
 web/node_modules/
 maquetas/
 *.tar.gz
+.git/
+
+# En la nube la base es Postgres. Meter el SQLite de la demo en la imagen es
+# llevarse los datos de prueba puestos, y el -wal los tiene adentro.
+hilo.db
+hilo.db-wal
+hilo.db-shm
+hilo.db.*
+
+*.bak
+.env
+.hilo_secreto

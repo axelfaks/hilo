@@ -18,6 +18,7 @@ que saltear el aislamiento sea una decisión visible y no un olvido.
 
 Quién NO está en la lista, y por qué:
   - `Business`  — se busca por su propio id.
+  - `Acceso`    — el log de "ver como" es NUESTRO, no de ningún inquilino.
   - `Usuario`   — el login tiene que encontrar a alguien por mail ANTES de saber
                   de qué negocio es. Igual lleva `business_id` para saber a dónde
                   pertenece, y el mail es único en toda la app.
@@ -27,10 +28,12 @@ from contextvars import ContextVar
 
 from sqlalchemy import event, orm
 
-from .models import Alias, Briefing, Commitment, Credencial, Identity, Message
+from .models import (Alias, Briefing, Cobro, Commitment, Credencial, Falla,
+                     Identity, Message, UsoIA, Vinculo)
 
 # Los modelos que pertenecen a UN negocio.
-MODELOS = (Alias, Identity, Message, Briefing, Commitment, Credencial)
+MODELOS = (Alias, Identity, Message, Briefing, Commitment, Credencial, UsoIA,
+           Falla, Cobro, Vinculo)
 
 # ContextVar y no una global: cada request y cada hilo (el vigía del correo es un
 # hilo aparte) tiene el suyo. Con una variable global el vigía del mail y el

@@ -17,7 +17,9 @@ import hashlib
 import hmac
 import json
 import os
+import secrets
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta
 
@@ -34,6 +36,12 @@ _estado = {
     # está el problema (el caso clásico es el 9 de los celulares argentinos).
     "ultimo_wamid": "",
     "ultimo_wa_id": "",
+    # Lo último que dijo Meta cuando le preguntamos si el token sirve. None =
+    # todavía no preguntamos. Se llena en el arranque y con el botón del
+    # back-office; NO en cada request, que sería una llamada a Meta por pantalla.
+    "token_ok": None,
+    "token_detalle": "",
+    "token_probado": "",
 }
 
 # Meta deja responder libremente solo dentro de las 24 h desde el último mensaje
@@ -47,6 +55,7 @@ GRAPH = "https://graph.facebook.com"
 
 def _cfg() -> dict:
     return {
+        "app_id": os.environ.get("WA_APP_ID", "").strip(),
         "token": os.environ.get("WA_TOKEN", "").strip(),
         "phone_id": os.environ.get("WA_PHONE_ID", "").strip(),
         "waba_id": os.environ.get("WA_WABA_ID", "").strip(),
@@ -73,7 +82,20 @@ def estado() -> dict:
         "version": c["version"],
         "webhook_verificable": bool(c["verify"]),
         "firma_verificable": bool(c["secreto"]),
+        # Sin app_id + secreto no se puede cambiar el código del popup por el token
+        # del cliente, o sea que el Embedded Signup no puede funcionar.
+        "puede_conectar_clientes": bool(c["app_id"] and c["secreto"]),
     }
+
+
+def cuenta_del_env() -> dict:
+    """Las llaves del `.env`. Es el fallback de la instalación de un solo negocio.
+
+    Cuando un cliente conecta su WhatsApp por Embedded Signup, sus llaves viven en
+    la tabla `credencial` y llegan acá como parámetro `cuenta`.
+    """
+    c = _cfg()
+    return {"token": c["token"], "phone_id": c["phone_id"], "version": c["version"]}
 
 
 # ------------------------------------------------------------------- números
@@ -129,7 +151,34 @@ def ventana_abierta(ultimo_entrante: datetime | None) -> bool:
     return datetime.now() - ultimo_entrante < timedelta(hours=VENTANA_HORAS)
 
 
-def _postear(cuerpo: dict) -> tuple[bool, str]:
+def _pedir(metodo: str, ruta: str, token: str, cuerpo: dict | None = None,
+           params: dict | None = None, version: str = "") -> tuple[bool, object]:
+    """La ÚNICA puerta a la Graph API. Devuelve (salió, datos) o (False, mensaje).
+
+    Todo pasa por acá para que el manejo de errores y la traducción de los códigos
+    de Meta estén en un solo lugar — y para que las pruebas puedan reemplazar esta
+    función y ejercitar el flujo entero sin tocar la red.
+    """
+    v = version or _cfg()["version"]
+    url = f"{GRAPH}/{v}/{ruta.lstrip('/')}"
+    if params:
+        url += "?" + urllib.parse.urlencode(params)
+    datos = json.dumps(cuerpo, ensure_ascii=False).encode("utf-8") if cuerpo is not None else None
+    cabeceras = {"Content-Type": "application/json"}
+    if token:
+        cabeceras["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, data=datos, method=metodo, headers=cabeceras)
+    try:
+        with urllib.request.urlopen(req, timeout=25) as r:
+            crudo = r.read().decode() or "{}"
+        return True, json.loads(crudo)
+    except urllib.error.HTTPError as e:
+        return False, _leer_error(e)
+    except Exception as e:                               # noqa: BLE001
+        return False, f"No pude hablar con Meta: {e}"
+
+
+def _postear(cuerpo: dict, cuenta: dict | None = None) -> tuple[bool, str]:
     """El POST a /messages. Lo comparten el texto libre y las plantillas.
 
     OJO con lo que significa el éxito acá: Meta responde 200 cuando ACEPTA el
@@ -137,40 +186,27 @@ def _postear(cuerpo: dict) -> tuple[bool, str]:
     el mensaje no llega nunca. Por eso se guarda el `wa_id` que devuelve: ese es
     el número al que WhatsApp va a entregar de verdad.
     """
-    c = _cfg()
-    req = urllib.request.Request(
-        f"{GRAPH}/{c['version']}/{c['phone_id']}/messages",
-        data=json.dumps(cuerpo, ensure_ascii=False).encode("utf-8"),
-        headers={"Authorization": f"Bearer {c['token']}",
-                 "Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=20) as r:
-            data = json.loads(r.read().decode())
-        _estado["enviados"] += 1
-        _estado["ultimo_envio"] = datetime.now().isoformat(timespec="seconds")
-        _estado["ultimo_error"] = ""
-        _estado["ultimo_wamid"] = (data.get("messages") or [{}])[0].get("id", "")
-        _estado["ultimo_wa_id"] = (data.get("contacts") or [{}])[0].get("wa_id", "")
-        return True, ""
-    except urllib.error.HTTPError as e:
-        detalle = _leer_error(e)
-        _estado["ultimo_error"] = detalle
-        return False, detalle
-    except Exception as e:                               # noqa: BLE001
-        detalle = f"No pude hablar con Meta: {e}"
-        _estado["ultimo_error"] = detalle
-        return False, detalle
+    cta = cuenta or cuenta_del_env()
+    salio, r = _pedir("POST", f"{cta['phone_id']}/messages", cta["token"], cuerpo,
+                      version=cta.get("version") or "")
+    if not salio:
+        _estado["ultimo_error"] = str(r)
+        return False, str(r)
+    _estado["enviados"] += 1
+    _estado["ultimo_envio"] = datetime.now().isoformat(timespec="seconds")
+    _estado["ultimo_error"] = ""
+    _estado["ultimo_wamid"] = (r.get("messages") or [{}])[0].get("id", "")
+    _estado["ultimo_wa_id"] = (r.get("contacts") or [{}])[0].get("wa_id", "")
+    return True, ""
 
 
-def enviar(destino: str, texto: str) -> tuple[bool, str]:
+def enviar(destino: str, texto: str, cuenta: dict | None = None) -> tuple[bool, str]:
     """Manda un mensaje de texto libre. Devuelve (salió, error). Nunca explota.
 
     Solo funciona DENTRO de la ventana de 24 h. Fuera de ella hay que usar
     `enviar_plantilla()`.
     """
-    if not configurado():
+    if not (cuenta or configurado()):
         return False, "WhatsApp no está configurado"
     numero = normalizar(destino)
     if not numero:
@@ -182,11 +218,11 @@ def enviar(destino: str, texto: str) -> tuple[bool, str]:
         "type": "text",
         # 4096 es el máximo de Meta. Cortar acá es mejor que un 400 sin explicar.
         "text": {"preview_url": True, "body": (texto or "").strip()[:4096]},
-    })
+    }, cuenta)
 
 
 def enviar_plantilla(destino: str, nombre: str = "hello_world",
-                     idioma: str = "en_US") -> tuple[bool, str]:
+                     idioma: str = "en_US", cuenta: dict | None = None) -> tuple[bool, str]:
     """Manda una plantilla aprobada.
 
     Es lo ÚNICO que se puede mandar cuando no hay una ventana de 24 h abierta —o
@@ -195,7 +231,7 @@ def enviar_plantilla(destino: str, nombre: str = "hello_world",
     si la plantilla llega y el texto libre no, el problema es la ventana y no la
     configuración.
     """
-    if not configurado():
+    if not (cuenta or configurado()):
         return False, "WhatsApp no está configurado"
     numero = normalizar(destino)
     if not numero:
@@ -206,7 +242,7 @@ def enviar_plantilla(destino: str, nombre: str = "hello_world",
         "to": numero,
         "type": "template",
         "template": {"name": nombre, "language": {"code": idioma}},
-    })
+    }, cuenta)
 
 
 # --------------------------------------------------------------------- entrada
@@ -318,3 +354,141 @@ def procesar(payload: dict) -> list[dict]:
         _estado["recibidos"] += len(salida)
         _estado["ultimo_recibido"] = datetime.now().isoformat(timespec="seconds")
     return salida
+
+
+# ------------------------------------------ conectar el WhatsApp de un cliente
+#
+# Esto es el Embedded Signup visto desde el backend. El cliente aprieta un botón
+# en Hilo, se abre un popup de Facebook, y vuelve con tres cosas: un código que
+# dura 30 segundos, el id de su cuenta de WhatsApp (waba_id) y el de su número
+# (phone_id). Lo que sigue convierte eso en un canal andando, sin que el cliente
+# vea un solo identificador.
+#
+# Nada de esto se configura a mano por cliente. Es el mismo código para el cliente
+# 1 y para el 100.
+
+
+def pin_nuevo() -> str:
+    """Un PIN de verificación en dos pasos, distinto para cada cliente.
+
+    Meta lo pide al registrar el número. Usar el mismo para todos sería darle a
+    cualquiera que lo averigüe la llave de todos los números.
+    """
+    return f"{secrets.randbelow(1000000):06d}"
+
+
+def intercambiar_codigo(codigo: str) -> tuple[bool, str]:
+    """El código del popup, por el token del cliente.
+
+    El código dura 30 segundos: esto se llama enseguida y no se guarda nunca.
+    """
+    c = _cfg()
+    if not (c["app_id"] and c["secreto"]):
+        return False, ("Faltan WA_APP_ID o WA_APP_SECRET en el .env: sin eso no se "
+                       "puede conectar el WhatsApp de un cliente")
+    salio, r = _pedir("GET", "oauth/access_token", "", params={
+        "client_id": c["app_id"], "client_secret": c["secreto"], "code": codigo})
+    if not salio:
+        return False, str(r)
+    token = (r or {}).get("access_token", "")
+    if not token:
+        return False, "Meta aceptó el código pero no devolvió ningún token"
+    return True, token
+
+
+def suscribir_waba(waba_id: str, token: str) -> tuple[bool, str]:
+    """Engancha NUESTRA app a la cuenta de WhatsApp del cliente.
+
+    Esta es la línea que hace que todo esto escale. A partir de acá los mensajes de
+    ese cliente caen en el webhook que ya configuramos una sola vez, y no hay que
+    tocar ninguna configuración por cliente nuevo. Sin esto el alta parece exitosa
+    y después no llega nunca un mensaje.
+    """
+    salio, r = _pedir("POST", f"{waba_id}/subscribed_apps", token)
+    if not salio:
+        return False, str(r)
+    if not (r or {}).get("success", True):
+        return False, "Meta no confirmó la suscripción de la app a esa cuenta"
+    return True, ""
+
+
+def registrar_numero(phone_id: str, token: str, pin: str) -> tuple[bool, str]:
+    """Activa el número en la Cloud API. Sin esto no se puede mandar ni recibir."""
+    salio, r = _pedir("POST", f"{phone_id}/register", token,
+                      {"messaging_product": "whatsapp", "pin": pin})
+    if not salio:
+        return False, str(r)
+    return True, ""
+
+
+def datos_del_numero(phone_id: str, token: str) -> dict:
+    """El número tal como lo va a ver el cliente. Para mostrarlo, no para operar."""
+    salio, r = _pedir("GET", phone_id, token, params={
+        "fields": "display_phone_number,verified_name,quality_rating"})
+    return r if (salio and isinstance(r, dict)) else {}
+
+
+def probar_token(cuenta: dict | None = None) -> tuple[bool, str]:
+    """¿El token sigue vivo? Una pregunta barata a Meta que evita una demo muerta.
+
+    El token temporal de Meta dura 24 h y cuando vence NO avisa: los mensajes
+    simplemente dejan de salir, con un error que solo se ve si alguien mira. Esto
+    lo pregunta de frente, pidiendo los datos del número —el pedido más barato que
+    hay— y devuelve el motivo traducido.
+
+    Se llama en el arranque y desde el back-office. Nunca en un request normal:
+    una llamada a Meta por pantalla es una pantalla lenta.
+    """
+    c = cuenta or cuenta_del_env()
+    if not (c.get("phone_id") and c.get("token")):
+        _estado["token_ok"] = None
+        _estado["token_detalle"] = "Falta WA_TOKEN o WA_PHONE_ID en el .env"
+        return False, _estado["token_detalle"]
+    salio, r = _pedir("GET", c["phone_id"], c["token"],
+                      params={"fields": "display_phone_number,verified_name"})
+    _estado["token_probado"] = datetime.now().isoformat()
+    if salio and isinstance(r, dict):
+        _estado["token_ok"] = True
+        _estado["token_detalle"] = (f"{r.get('verified_name', '')} "
+                                    f"{r.get('display_phone_number', '')}").strip()
+        return True, _estado["token_detalle"]
+    _estado["token_ok"] = False
+    _estado["token_detalle"] = str(r)
+    return False, str(r)
+
+
+def conectar_cliente(codigo: str, waba_id: str, phone_id: str) -> tuple[bool, object]:
+    """El alta completa de un cliente, en orden. Devuelve (ok, datos) o (False, motivo).
+
+    Los pasos van en este orden a propósito: si el token falla no tiene sentido
+    seguir, y si la suscripción falla el número queda registrado pero mudo — mejor
+    cortar y decirlo que dejar un canal a medio conectar que parece andar.
+
+    El registro del número es el único paso que se perdona: un número que ya estaba
+    registrado devuelve error y eso NO es un problema — es un cliente que se está
+    reconectando.
+    """
+    salio, token = intercambiar_codigo(codigo)
+    if not salio:
+        return False, f"No pude obtener el acceso a la cuenta del cliente: {token}"
+
+    salio, error = suscribir_waba(waba_id, token)
+    if not salio:
+        return False, f"No pude suscribir Hilo a su cuenta de WhatsApp: {error}"
+
+    pin = pin_nuevo()
+    registrado, error_registro = registrar_numero(phone_id, token, pin)
+
+    datos = datos_del_numero(phone_id, token)
+    return True, {
+        "token": token,
+        "waba_id": waba_id,
+        "phone_id": phone_id,
+        "pin": pin if registrado else "",
+        "numero": datos.get("display_phone_number", ""),
+        "nombre_visible": datos.get("verified_name", ""),
+        "calidad": datos.get("quality_rating", ""),
+        # Se devuelve el aviso en vez de fallar: casi siempre es "ya estaba
+        # registrado", que es exactamente lo que pasa cuando alguien reconecta.
+        "aviso_registro": "" if registrado else error_registro,
+    }

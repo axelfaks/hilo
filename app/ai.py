@@ -25,7 +25,10 @@ from .logic import CANALES
 # ---------------------------------------------------------------------------
 
 _estado = {"modelo": None, "candidatos": [], "cliente": None, "error": "",
-           "llamadas": 0, "errores": [], "ultimo_pedido": 0.0}
+           "llamadas": 0, "errores": [], "ultimo_pedido": 0.0,
+           # lo que consumio la ultima llamada: lo lee _preguntar() para
+           # anotarselo a la cuenta que la pidio (ver app/uso.py)
+           "ultimo_uso": {"entrada": 0, "salida": 0}}
 
 # La capa gratuita limita pedidos por minuto. Si mandamos tres llamadas juntas
 # (briefing + redactor + cliente simulado) nos come la cuota y todo se cae al
@@ -194,18 +197,26 @@ def _demora_sugerida(texto: str) -> float:
     return min(float(m.group(1)), 6.0) if m else 0.0
 
 
+def _anotar_consumo(r: dict):
+    """Google devuelve los tokens en la misma respuesta. Es gratis medirlo."""
+    u = r.get("usageMetadata") or {}
+    _estado["ultimo_uso"] = {"entrada": int(u.get("promptTokenCount") or 0),
+                             "salida": int(u.get("candidatesTokenCount") or 0)}
+
+
 def _un_intento(modelo: str, clave: str, system: str, prompt: str, max_tokens: int) -> dict:
     _esperar_turno()
     url = f"{GEMINI_BASE}/models/{modelo}:generateContent?key={clave}"
     try:
-        return _json_de(_texto_de_gemini(
-            _http_json(url, _cuerpo_gemini(system, prompt, max_tokens, True))))
+        r = _http_json(url, _cuerpo_gemini(system, prompt, max_tokens, True))
     except RuntimeError as e:
         # los modelos viejos no conocen thinkingConfig: reintentamos sin eso
         if "HTTP 400" not in str(e):
             raise
-        return _json_de(_texto_de_gemini(
-            _http_json(url, _cuerpo_gemini(system, prompt, max_tokens, False))))
+        r = _http_json(url, _cuerpo_gemini(system, prompt, max_tokens, False))
+    # antes de parsear: si el modelo devolvio basura igual nos la cobraron
+    _anotar_consumo(r)
+    return _json_de(_texto_de_gemini(r))
 
 
 # El modelo esta retirado: no vuelve nunca, hay que cambiarlo.
@@ -272,6 +283,9 @@ def _preguntar_anthropic(system: str, prompt: str, max_tokens: int) -> dict:
                 system=system, messages=[{"role": "user", "content": prompt}],
             )
             _estado["modelo"] = modelo
+            _estado["ultimo_uso"] = {
+                "entrada": int(getattr(r.usage, "input_tokens", 0) or 0),
+                "salida": int(getattr(r.usage, "output_tokens", 0) or 0)}
             return _json_de(r.content[0].text)
         except Exception as e:
             ultimo = e
@@ -282,9 +296,28 @@ def _preguntar_anthropic(system: str, prompt: str, max_tokens: int) -> dict:
 
 # --------------------------------------------------------------------- puerta
 
+def _anotar_a_la_cuenta(fallo: bool):
+    """Le carga la llamada a la cuenta que la pidio.
+
+    De que cuenta es NO se lo preguntamos al que llama: sale de
+    `inquilino.actual()`, que ya lo sabe tanto en un request como en el hilo que
+    vigila el correo. La importacion es adentro a proposito — `ai.py` no tiene
+    que saber que existe una base de datos hasta el momento de anotar.
+    """
+    try:
+        from . import uso
+        uso.anotar_ia(modelo=_estado["modelo"] or "",
+                      entrada=_estado["ultimo_uso"].get("entrada", 0),
+                      salida=_estado["ultimo_uso"].get("salida", 0),
+                      fallo=fallo)
+    except Exception:                                            # noqa: BLE001
+        pass          # medir nunca puede tumbar una respuesta al cliente
+
+
 def _preguntar(system: str, prompt: str, max_tokens: int = 1200) -> dict:
     """Devuelve {} si algo falla. Nunca revienta: la app tiene que seguir viva."""
     p = proveedor()
+    _estado["ultimo_uso"] = {"entrada": 0, "salida": 0}
     try:
         if p == "gemini":
             r = _preguntar_gemini(system, prompt, max_tokens)
@@ -294,10 +327,17 @@ def _preguntar(system: str, prompt: str, max_tokens: int = 1200) -> dict:
             return {}
         _estado["error"] = ""
         _estado["llamadas"] += 1
+        _anotar_a_la_cuenta(fallo=False)
         return r
     except Exception as e:
         _estado["error"] = f"{type(e).__name__}: {e}"[:400]
         print(f"[hilo] la IA no respondio ({e}); sigo con el calculo local")
+        _anotar_a_la_cuenta(fallo=True)
+        try:
+            from . import uso
+            uso.anotar_falla("ia", f"{type(e).__name__}: {e}")
+        except Exception:                                        # noqa: BLE001
+            pass
     return {}
 
 

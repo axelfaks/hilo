@@ -13,12 +13,42 @@ class Business(SQLModel, table=True):
     nombre: str = "Mi negocio"
     descripcion: str = ""
     rubro: str = ""                   # como lo diria el dueño: "panaderias", "estudio contable"
+    codigo_publico: str = ""          # va en el link que el vendedor le pasa a SUS
+                                      # clientes (t.me/HiloBot?start=neg_xxxx). Es
+                                      # público a propósito, pero random: con el id
+                                      # del negocio a secas cualquiera se cuelga de
+                                      # la cola de otro escribiendo n-1, n-2, n-3.
     vendedor: str = ""                # quien firma los mensajes
     estados_json: str = "[]"          # ["Nuevo", "Calificado", ...] editable por el admin
     reglas_json: str = "{}"           # tono, horario, descuento_max, temas_escalan, insistencias
     canales_json: str = "[]"          # [{"canal": "mail", "valor": "ventas@..."}] los tuyos
     autonomia_default: int = 3
     onboarding_hecho: bool = False    # False = la app arranca preguntando
+
+    # --- lo que miramos NOSOTROS desde el back-office (#/root) ---
+    plan: str = "prueba"              # prueba | basico | pro — comercial, lo ponemos a mano
+    estado: str = "activa"            # activa | suspendida
+    nota: str = ""                    # nota interna nuestra, el cliente no la ve
+    creado: Optional[datetime] = Field(default_factory=datetime.now)
+
+    # --- plata. El precio vive acá y no en el plan: los primeros clientes de
+    # cualquier producto pagan precios distintos, y una tabla rígida obliga a
+    # mentirle a la base. `pagado_hasta` es LA fecha: todo lo demás se deduce.
+    precio_mensual: int = 0           # en pesos. 0 = todavía no paga
+    paga_desde: Optional[datetime] = None
+    pagado_hasta: Optional[datetime] = None
+
+    # La prueba gratis. Funciona EXACTAMENTE igual que `pagado_hasta`: son las dos
+    # caras de una sola pregunta —¿hasta cuándo tiene acceso?— y por eso el corte
+    # se calcula con `max()` de las dos y no con dos caminos distintos.
+    prueba_hasta: Optional[datetime] = None
+
+    # La suscripción con tarjeta, del lado de Mercado Pago. Nosotros NO guardamos
+    # ni un dígito de la tarjeta: solo el id de la suscripción y cuatro números
+    # para que el cliente reconozca cuál puso.
+    suscripcion_id: str = ""          # el preapproval_id de Mercado Pago
+    suscripcion_estado: str = ""      # "" | pendiente | activa | pausada | cancelada
+    tarjeta: str = ""                 # "Visa ····4242", para mostrar y nada más
 
 
 class Alias(SQLModel, table=True):
@@ -108,6 +138,7 @@ class Usuario(SQLModel, table=True):
     rol: str = "dueño"                # dueño | vendedor
     activo: bool = True
     creado: datetime = Field(default_factory=datetime.now)
+    ultimo_acceso: Optional[datetime] = None   # lo escribe la puerta, cada 10 min
 
 
 class Credencial(SQLModel, table=True):
@@ -126,8 +157,120 @@ class Credencial(SQLModel, table=True):
     canal: str = Field(index=True)    # whatsapp | mail | telegram | instagram
     datos_json: str = ""              # cifrado: tokens, claves, ids
     externo_id: str = ""              # el id del proveedor: phone_number_id, chat_id...
+    referencia: str = ""              # el OTRO id que necesita el canal, en claro y
+                                      # consultable. En Telegram es el
+                                      # `business_connection_id`: no es un secreto
+                                      # (el token del bot es nuestro, no del cliente)
+                                      # y hay que poder buscar por él cuando entra
+                                      # un mensaje.
     etiqueta: str = ""                # lo que ve el usuario: "+54 9 11 2265 7773"
     activo: bool = True
     ultimo_error: str = ""
     ultimo_ok: Optional[datetime] = None
     creado: datetime = Field(default_factory=datetime.now)
+
+
+# ===========================================================================
+# Lo que necesitamos NOSOTROS para operar (el back-office de #/root).
+#
+# Las tres tablas de acá abajo no las ve ningún cliente: son el tablero con el
+# que Axel y Toto miran todas las cuentas. Van en la misma base a propósito —
+# un back-office aparte es una segunda app que mantener, y todavía somos dos.
+# ===========================================================================
+
+
+class UsoIA(SQLModel, table=True):
+    """Cuánta IA gastó cada cuenta, por día.
+
+    Es nuestro único costo variable directo y hasta hoy no se medía: sabíamos
+    que la factura existía, no de quién era. Una fila por negocio y por día;
+    `app/uso.py` la va sumando y nunca crece por mensaje.
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    business_id: Optional[int] = Field(default=None, index=True)
+    dia: str = Field(default="", index=True)   # "2026-08-23", ordenable como texto
+    llamadas: int = 0
+    fallos: int = 0                   # llamadas que volvieron sin respuesta
+    tokens_entrada: int = 0
+    tokens_salida: int = 0
+    modelo: str = ""                  # el último que contestó ese día
+
+
+class Falla(SQLModel, table=True):
+    """Algo que salió mal, con nombre y apellido de cuenta.
+
+    Sin esto, "no me llegan los mensajes" se responde pidiendo capturas. El
+    back-office muestra las últimas 50 de cada cuenta y ahí se termina la
+    adivinanza.
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    business_id: Optional[int] = Field(default=None, index=True)
+    cuando: datetime = Field(default_factory=datetime.now, index=True)
+    donde: str = ""                   # ia | whatsapp | correo | webhook | app
+    detalle: str = ""
+
+
+class Cobro(SQLModel, table=True):
+    """Un cobro que entró. Es el libro contable, y por ahora se escribe a mano.
+
+    No hay pasarela y está bien que no la haya: construir billing antes de tener
+    diez clientes pagando es construir la parte más aburrida del producto para
+    nadie. Alguien transfiere, nosotros lo marcamos acá, y `pagado_hasta` se
+    corre sola.
+
+    Lo que sí importa desde el primer peso es que quede **el registro**: cuánto,
+    cuándo, por qué medio y hasta cuándo paga. Eso no se reconstruye después.
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    business_id: Optional[int] = Field(default=None, index=True)
+    cuando: datetime = Field(default_factory=datetime.now, index=True)
+    monto: int = 0                    # en pesos
+    medio: str = "transferencia"      # transferencia | mercadopago | efectivo | otro
+    meses: int = 1
+    periodo_hasta: Optional[datetime] = None   # hasta dónde quedó paga con esto
+    nota: str = ""
+    quien: str = ""                   # el mail nuestro que lo marcó, o "mercadopago"
+    externo_id: str = ""              # el id del pago en Mercado Pago. Es la llave
+                                      # contra los reintentos: MP manda el mismo
+                                      # aviso varias veces y sin esto el mismo
+                                      # cobro sumaría tres meses.
+
+
+class Vinculo(SQLModel, table=True):
+    """Un código de un solo uso para enganchar una cuenta de afuera con la de acá.
+
+    Es la pieza que hace que conectar un canal sea fácil. El problema de fondo es
+    siempre el mismo: alguien abre Telegram (o WhatsApp, o su mail) y del otro
+    lado llega un mensaje… **de un desconocido**. Nada en ese mensaje dice a qué
+    cuenta de Hilo pertenece.
+
+    La solución es un código corto que el cliente lleva puesto: lo genera la
+    pantalla, viaja adentro del link (`t.me/HiloBot?start=A7K2M9`) y vuelve con
+    el primer mensaje. Ahí sabemos de quién es, y recién ahí guardamos nada.
+
+    Un solo uso y con vencimiento a propósito: un código que no vence es una
+    llave permanente a la cuenta de alguien tirada en un historial de chat.
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    business_id: Optional[int] = Field(default=None, index=True)
+    canal: str = ""                   # telegram | mail | instagram…
+    codigo: str = Field(default="", index=True)
+    creado: datetime = Field(default_factory=datetime.now)
+    vence: Optional[datetime] = None
+    usado: Optional[datetime] = None
+    quien: str = ""                   # el mail del usuario que lo pidió
+    datos_json: str = "{}"            # lo que dejó la vinculación: nombre, id externo…
+
+
+class Acceso(SQLModel, table=True):
+    """El log de "ver como": quién entró, cuándo y a qué cuenta.
+
+    Impersonar sin dejar rastro es exactamente la clase de poder que después no
+    se puede explicar. Esta tabla no se filtra por inquilino: es nuestra.
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    cuando: datetime = Field(default_factory=datetime.now, index=True)
+    usuario_id: Optional[int] = None
+    usuario_email: str = ""
+    negocio_id: Optional[int] = None
+    negocio_nombre: str = ""

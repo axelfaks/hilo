@@ -623,3 +623,180 @@ textarea{resize:vertical;line-height:1.6}
 /* el «Salir» del onboarding: presente pero sin competir con el paso */
 .ob-top-der{display:flex;align-items:center;gap:var(--sp-4)}
 .ob-salir{padding:0;font-size:var(--fs-small)}
+
+/* ===========================================================================
+   BACK-OFFICE (#/root) — la pantalla con la que miramos todas las cuentas.
+   La ven dos personas, así que no lleva ni una idea nueva de diseño: son los
+   mismos tokens de Toto puestos en una tabla densa. La regla de acá es que
+   entre la mayor cantidad de información por pantalla sin tener que scrollear
+   para saber si algo se rompió.
+   =========================================================================== */
+
+/* Una tabla de nueve columnas no entra en el ancho de lectura de la app. Es la
+   única pantalla que se sale de los 1120 px, y por eso el ancho es una clase
+   aparte y no un cambio en `.wrap-page`, que lo usan todas las demás. */
+.wrap-page--ancho{max-width:1440px}
+
+.root-top{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--sp-5);flex-wrap:wrap}
+.root-vivo{display:inline-flex;align-items:center;gap:var(--sp-2);font-size:var(--fs-small);color:var(--ink-3)}
+.root-vivo i{width:7px;height:7px;border-radius:50%;background:var(--accent);display:inline-block}
+
+/* la franja roja: lo único que se mira antes de tomar un café */
+.root-alerta{display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap;
+  background:var(--st-yours-soft);border:1px solid #F0D2CB;border-radius:var(--r-md);
+  padding:var(--sp-3) var(--sp-4);margin:var(--sp-5) 0 0}
+.root-alerta b{color:var(--st-yours)}
+.root-alerta--calma{background:var(--accent-soft);border-color:var(--accent-line)}
+.root-alerta--calma b{color:var(--accent-strong)}
+
+.root-scroll{overflow-x:auto;margin-top:var(--sp-5)}
+.root-tabla{width:100%;border-collapse:collapse;background:var(--surface);
+  border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden;font-size:var(--fs-small)}
+.root-tabla th{text-align:left;font-size:var(--fs-micro);font-weight:var(--w-bold);letter-spacing:.09em;
+  text-transform:uppercase;color:var(--ink-3);padding:11px 14px;border-bottom:1px solid var(--line);
+  white-space:nowrap;background:var(--bg)}
+.root-tabla td{padding:12px 14px;border-bottom:1px solid var(--line-soft);vertical-align:middle;
+  white-space:nowrap}
+/* la primera columna es la única que puede respirar en dos renglones */
+.root-tabla td:first-child{white-space:normal;min-width:225px}
+.root-tabla td:first-child .root-sub{white-space:normal;word-break:break-word}
+.root-tabla tr:last-child td{border-bottom:0}
+.root-tabla .num{text-align:right;font-variant-numeric:tabular-nums}
+.root-fila{cursor:pointer;transition:background .1s}
+.root-fila:hover{background:#FAFBFB}
+.root-fila.is-abierta{background:var(--accent-soft)}
+.root-fila.is-suspendida .root-nombre{color:var(--ink-3);text-decoration:line-through}
+.root-nombre{font-family:var(--font-serif);font-size:16px;font-weight:var(--w-semi);letter-spacing:-.01em;color:var(--ink)}
+.root-sub{display:block;font-size:var(--fs-micro);color:var(--ink-3);margin-top:2px}
+
+/* la salud de un canal, que es lo que uno viene a ver */
+.sal{display:inline-flex;align-items:center;gap:5px;font-size:var(--fs-micro);font-weight:var(--w-bold);
+  letter-spacing:.05em;text-transform:uppercase;border-radius:var(--r-pill);padding:4px 9px;
+  color:var(--st-unknown);background:var(--st-unknown-soft);white-space:nowrap}
+.sal::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+.sal--ok{color:var(--st-waiting);background:var(--st-waiting-soft)}
+.sal--error{color:var(--st-yours);background:var(--st-yours-soft)}
+.sal--quieto{color:var(--st-cooling);background:var(--st-cooling-soft)}
+.sal--apagado{color:var(--ink-3);background:var(--bg)}
+
+.root-plan{display:inline-block;font-size:var(--fs-micro);font-weight:var(--w-bold);letter-spacing:.07em;
+  text-transform:uppercase;color:var(--ink-2);background:var(--bg);border:1px solid var(--line);
+  border-radius:var(--r-pill);padding:3px 9px}
+.root-plan--pro{color:var(--accent-strong);background:var(--accent-soft);border-color:var(--accent-line)}
+.root-plan--suspendida{color:var(--st-yours);background:var(--st-yours-soft);border-color:#F0D2CB}
+
+/* el detalle que se abre debajo de la fila */
+.root-detalle{background:var(--bg);padding:var(--sp-5) var(--sp-6)}
+.root-cols{display:grid;grid-template-columns:1.1fr 1fr 1fr;gap:var(--sp-5);align-items:start}
+.root-cols--2{grid-template-columns:1fr 1fr;margin-top:var(--sp-5)}
+.root-caja{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);padding:var(--sp-4)}
+.root-caja h4{font-size:var(--fs-micro);font-weight:var(--w-bold);letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink-3);margin-bottom:var(--sp-3)}
+.root-linea{display:flex;align-items:center;gap:var(--sp-3);padding:7px 0;border-top:1px solid var(--line-soft);font-size:var(--fs-small)}
+.root-linea:first-of-type{border-top:0}
+.root-linea .grow{flex:1}
+.root-linea small{color:var(--ink-3);font-size:var(--fs-micro)}
+
+/* consumo de IA: catorce barras y listo. No es un dashboard, es un pulso. */
+.root-barras{display:flex;align-items:flex-end;gap:3px;height:64px;margin-top:var(--sp-2)}
+.root-barras i{flex:1;background:var(--accent-soft);border-radius:2px 2px 0 0;min-height:2px;position:relative}
+.root-barras i.tiene{background:var(--accent)}
+.root-barras i.fallo{background:var(--st-yours)}
+.root-pie{display:flex;justify-content:space-between;font-size:var(--fs-micro);color:var(--ink-3);margin-top:6px}
+
+.root-fallas{max-height:220px;overflow:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+.root-fallas div{padding:6px 0;border-top:1px solid var(--line-soft);color:var(--ink-2);line-height:1.45}
+.root-fallas div:first-child{border-top:0}
+.root-fallas b{color:var(--st-yours);font-weight:var(--w-bold)}
+.root-fallas time{color:var(--ink-3)}
+
+.root-acciones{display:flex;gap:var(--sp-2);flex-wrap:wrap;align-items:center;margin-top:var(--sp-3)}
+.root-acciones select,.root-acciones input{font-family:var(--font-sans);font-size:var(--fs-small);color:var(--ink);
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--r-sm);padding:8px 10px}
+.root-acciones input{flex:1;min-width:160px}
+
+/* la barra negra de "estás viendo la cuenta de otro". Fea a propósito: tiene
+   que ser imposible olvidarse de que uno está adentro de la cuenta de alguien. */
+.root-suplantando{background:var(--ink);color:#fff}
+.root-suplantando .bar-in{height:auto;padding:10px var(--sp-7);gap:var(--sp-3);flex-wrap:wrap}
+.root-suplantando b{color:#fff}
+.root-suplantando .btn{background:transparent;border-color:rgba(255,255,255,.35);color:#fff}
+.root-suplantando .btn:hover{border-color:#fff}
+
+@media (max-width:1000px){ .root-cols,.root-cols--2{grid-template-columns:1fr} }
+
+/* --- la plata del back-office ------------------------------------------- */
+.root-plata{display:grid;grid-template-columns:repeat(5,1fr);gap:var(--sp-4);
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
+  padding:var(--sp-4) var(--sp-5);margin-top:var(--sp-4)}
+.root-plata-n{display:flex;flex-direction:column;gap:3px}
+.root-plata-n b{font-family:var(--font-serif);font-size:26px;font-weight:var(--w-medium);
+  letter-spacing:-.02em;font-variant-numeric:tabular-nums;color:var(--ink)}
+.root-plata-n small{font-size:var(--fs-micro);color:var(--ink-3);line-height:1.35}
+.root-plata-n.es-rojo b{color:var(--st-yours)}
+/* la lista de a quién escribirle va abajo, cruzando las cinco columnas: son
+   nombres, no un número más, y en una columna angosta se parten todos */
+.root-plata-lista{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:baseline;
+  gap:var(--sp-2) var(--sp-5);border-top:1px solid var(--line-soft);
+  padding-top:var(--sp-3);margin-top:var(--sp-1)}
+.root-plata-lista .lbl{width:100%;margin-bottom:2px}
+.root-plata-lista .link{font-size:var(--fs-small);text-align:left}
+.root-plata-lista small{color:var(--ink-3)}
+
+/* las barritas de cuota: llenas hasta el tope, rojas si se pasó */
+.root-cuota{display:grid;grid-template-columns:118px 1fr auto;align-items:center;
+  gap:10px;margin:7px 0;font-size:var(--fs-small);color:var(--ink-2)}
+.root-cuota-riel{height:7px;background:var(--line-soft);border-radius:var(--r-xs);overflow:hidden}
+.root-cuota-riel i{display:block;height:100%;background:var(--accent);border-radius:var(--r-xs)}
+.root-cuota-riel i.se-paso{background:var(--st-cooling)}
+.root-cuota b{font-variant-numeric:tabular-nums;color:var(--ink);font-size:var(--fs-small)}
+.root-cuota b.se-paso{color:var(--st-cooling)}
+.root-cuota small{color:var(--ink-3);font-weight:var(--w-regular)}
+
+.root-cols--abajo{grid-template-columns:1.2fr 1fr 1fr;margin-top:var(--sp-5)}
+@media (max-width:1200px){ .root-plata{grid-template-columns:repeat(2,1fr)} }
+@media (max-width:1000px){ .root-cols--abajo{grid-template-columns:1fr} }
+
+/* --- el plan del cliente (#/plan) --------------------------------------- */
+.plan-estado{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--accent);
+  border-radius:var(--r-lg);padding:var(--sp-6) var(--sp-7)}
+.plan-estado--ok{border-left-color:var(--st-waiting)}
+.plan-estado--calmo{border-left-color:var(--accent)}
+.plan-estado--urgente{border-left-color:var(--st-cooling);background:var(--st-cooling-soft)}
+.plan-estado--cortada{border-left-color:var(--st-yours);background:var(--st-yours-soft)}
+
+.planes{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-4);margin-top:var(--sp-4)}
+.plan-caja{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--r-lg);padding:var(--sp-5)}
+.plan-caja.es-tuyo{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.plan-precio{display:block;font-family:var(--font-serif);font-size:34px;font-weight:var(--w-medium);
+  letter-spacing:-.02em;line-height:1.1;margin-top:6px;font-variant-numeric:tabular-nums}
+.plan-limites{list-style:none;margin:0 0 var(--sp-4);padding:0;display:flex;flex-direction:column;gap:6px;
+  font-size:var(--fs-small);color:var(--ink-2)}
+.plan-limites li{padding-left:16px;position:relative}
+.plan-limites li::before{content:"·";position:absolute;left:4px;color:var(--accent);font-weight:700}
+.plan-limites b{color:var(--ink);font-variant-numeric:tabular-nums}
+.plan-caja .btn{margin-top:auto}
+@media (max-width:700px){ .planes{grid-template-columns:1fr} }
+
+/* --- conectar canales (#/canales) -------------------------------------- */
+.canal{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
+  padding:var(--sp-5) var(--sp-6);margin-bottom:var(--sp-4)}
+.canal.es-listo{border-color:var(--accent-line)}
+.canal-top{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--sp-4)}
+.canal-nombre{font-family:var(--font-serif);font-size:21px;font-weight:var(--w-semi);
+  letter-spacing:-.02em;margin-bottom:2px}
+.canal-nota{margin-top:var(--sp-3);color:var(--ink-3)}
+.canal-error{margin-top:var(--sp-3);color:var(--st-yours)}
+.canal-vivo{display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap;margin-top:var(--sp-3)}
+.canal .btn--primary{margin-top:var(--sp-4)}
+.canal-paso{margin-top:var(--sp-4);padding-top:var(--sp-4);border-top:1px solid var(--line-soft)}
+
+/* el código para tipear: grande, espaciado y sin ambigüedad */
+.canal-codigo{display:inline-block;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:30px;font-weight:var(--w-bold);letter-spacing:.22em;color:var(--ink);
+  background:var(--bg);border:1px dashed var(--line);border-radius:var(--r-md);
+  padding:10px 14px 10px 22px;margin:8px 0 10px}
+.canal-link{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;
+  color:var(--ink-2);background:var(--bg);border:1px solid var(--line);
+  border-radius:var(--r-sm);padding:8px 10px;overflow-x:auto;white-space:nowrap;max-width:100%}

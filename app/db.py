@@ -122,10 +122,37 @@ def asignar_negocio_a_lo_viejo():
         print(f"[hilo] filas viejas asignadas al negocio {negocio_id} -> " + ", ".join(tocadas))
 
 
+def fechar_los_negocios_viejos():
+    """Los negocios de antes del back-office no tienen fecha de alta.
+
+    La columna se agrega vacía, y una lista de cuentas donde la mitad dice "—" en
+    "alta" no sirve para nada. Se la ponemos con la del cliente más viejo, que es
+    lo más parecido a la verdad que hay en la base; si no tiene ninguno, con la
+    fecha de hoy. Idempotente: la segunda vez no queda ningún NULL.
+    """
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    if not insp.has_table("business"):
+        return
+    if "creado" not in {c["name"] for c in insp.get_columns("business")}:
+        return
+    with engine.begin() as con:
+        if insp.has_table("alias"):
+            con.execute(text("""
+                UPDATE business SET creado = (
+                    SELECT MIN(primer_contacto) FROM alias
+                    WHERE alias.business_id = business.id)
+                WHERE creado IS NULL"""))
+        con.execute(text("UPDATE business SET creado = CURRENT_TIMESTAMP "
+                         "WHERE creado IS NULL"))
+
+
 def crear_tablas():
     SQLModel.metadata.create_all(engine)
     asegurar_columnas()
     asignar_negocio_a_lo_viejo()
+    fechar_los_negocios_viejos()
 
 
 def sesion() -> Session:
