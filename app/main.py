@@ -18,7 +18,7 @@ from . import (ai, auth, cobros, correo, inquilino, mercadopago as mp,
 from .config import cargar as cargar_env
 
 cargar_env()
-from .db import crear_tablas, sesion
+from .db import crear_tablas, en_la_nube, sesion
 from .logic import (CANALES, CANALES_CON_ASUNTO, CANALES_SALIENTES,
                     NIVELES_AUTONOMIA, es_cerrado, urgencia)
 from .models import (Alias, Briefing, Business, Commitment, Credencial,
@@ -33,6 +33,10 @@ app.add_middleware(
 @app.on_event("startup")
 def _arranque():
     crear_tablas()
+    # Decir "falta X en el .env" cuando corre en la nube manda a la persona a
+    # mirar un archivo que ahi no existe. En la nube las variables viven en el
+    # panel. Un aviso que apunta al lugar equivocado cuesta mas que no avisar.
+    DONDE = "en las variables del panel" if en_la_nube() else "en el .env"
     # En un hosting la base arranca vacía. Con HILO_SEMBRAR=1 se carga la demo
     # una sola vez; si ya hay clientes, no toca nada.
     #
@@ -90,7 +94,7 @@ def _arranque():
         if not wa["webhook_verificable"]:
             print("[hilo] OJO: sin WA_VERIFY_TOKEN no vas a poder registrar el webhook")
     else:
-        print("[hilo] whatsapp dormido: faltan WA_TOKEN o WA_PHONE_ID en el .env")
+        print(f"[hilo] whatsapp dormido: faltan WA_TOKEN o WA_PHONE_ID {DONDE}")
 
     # Telegram: hay que DECIRLE a dónde mandar los mensajes. Sin esto, con el
     # token puesto y todo, no llega nada y no hay ningún error que lo explique.
@@ -105,10 +109,10 @@ def _arranque():
                       f"[hilo] OJO: no pude registrar el webhook de Telegram -> {detalle}")
             threading.Thread(target=_enganchar_telegram, daemon=True).start()
         else:
-            print("[hilo] telegram: falta HILO_URL en el .env, así que no registro el "
-                  "webhook. En local levantá el túnel y poné esa URL ahí.")
+            print(f"[hilo] telegram: falta HILO_URL {DONDE}, así que no registro "
+                  "el webhook. En local levantá el túnel y poné esa URL ahí.")
     else:
-        print("[hilo] telegram dormido: falta TG_TOKEN en el .env")
+        print(f"[hilo] telegram dormido: falta TG_TOKEN {DONDE}")
 
 
 def _negocio_de(canal: str, externo_id: str = ""):

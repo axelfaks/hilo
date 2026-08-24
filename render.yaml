@@ -12,6 +12,34 @@ services:
         generateValue: true
       - key: GEMINI_API_KEY
         sync: false          # la pegás vos en el panel, no viaja en el repo
+
+      # OJO: este servicio es "Blueprint managed". Lo que agregás a mano en el
+      # panel y NO está declarado acá se lo lleva puesto la próxima sincronización
+      # del blueprint, sin avisar. `sync: false` es justamente lo que significa
+      # "el valor lo pongo en el panel, vos no lo toques": es la razón por la que
+      # GEMINI_API_KEY sobrevivió y TG_TOKEN no.
+      - key: TG_TOKEN
+        sync: false          # de @BotFather. Un solo bot para todos los clientes.
+      - key: MAIL_USUARIO
+        sync: false
+      - key: MAIL_CLAVE
+        sync: false          # contraseña de APLICACIÓN de Google, no la de la cuenta
+      - key: WA_TOKEN
+        sync: false
+      - key: WA_PHONE_ID
+        sync: false
+      - key: WA_APP_SECRET
+        sync: false
+      - key: WA_VERIFY_TOKEN
+        sync: false
+      - key: MP_ACCESS_TOKEN
+        sync: false          # sin esto los cobros andan igual, en modo simulado
+
+      # No es secreto, así que va con el valor puesto: es la URL pública de este
+      # mismo servicio. Sin ella no se registra el webhook de Telegram y no llega
+      # ni un mensaje, sin ningún error que lo explique.
+      - key: HILO_URL
+        value: https://hilo-jx40.onrender.com
       - key: DATABASE_URL
         fromDatabase:
           name: hilo-db
